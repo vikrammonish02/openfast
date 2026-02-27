@@ -201,8 +201,8 @@ export default function DLCMatrix() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">DLC Matrix</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-xl font-bold text-slate-100">DLC Matrix</h2>
+          <p className="text-sm text-slate-400">
             Define Design Load Case sets for IEC certification
           </p>
         </div>
@@ -218,30 +218,30 @@ export default function DLCMatrix() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+          <div className="bg-surface-dark-secondary rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">New DLC Definition</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-lg font-semibold text-slate-100">New DLC Definition</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-300">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Name</label>
                 <input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g., IEC Class I DLC Set"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Turbine Model</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Turbine Model</label>
                 <select
                   value={newTurbineModelId}
                   onChange={(e) => setNewTurbineModelId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="">-- Select --</option>
                   {turbineModels.map((m) => (
@@ -253,7 +253,7 @@ export default function DLCMatrix() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                className="px-4 py-2 text-sm font-medium text-slate-200 bg-surface-dark-tertiary rounded-lg hover:bg-surface-dark-tertiary"
               >
                 Cancel
               </button>
@@ -271,10 +271,10 @@ export default function DLCMatrix() {
       )}
 
       {dlcDefs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-600 py-16">
           <Table2 className="h-12 w-12 text-slate-300 mb-3" />
-          <h3 className="text-base font-semibold text-slate-700">No DLC definitions</h3>
-          <p className="mt-1 text-sm text-slate-500 max-w-sm text-center">
+          <h3 className="text-base font-semibold text-slate-200">No DLC definitions</h3>
+          <p className="mt-1 text-sm text-slate-400 max-w-sm text-center">
             Create Design Load Case definitions to configure the simulation matrix.
           </p>
         </div>
@@ -289,12 +289,12 @@ export default function DLCMatrix() {
                 className={clsx(
                   'w-full rounded-lg border p-4 text-left transition-all',
                   selectedDlc?.id === dlc.id
-                    ? 'border-accent-300 bg-accent-50 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300',
+                    ? 'border-accent-500 bg-accent-950/30 shadow-sm'
+                    : 'border-slate-600 bg-surface-dark-secondary hover:border-slate-500',
                 )}
               >
-                <span className="font-medium text-slate-800">{dlc.name}</span>
-                <div className="mt-1 text-xs text-slate-500">
+                <span className="font-medium text-slate-100">{dlc.name}</span>
+                <div className="mt-1 text-xs text-slate-400">
                   {dlc.total_case_count} total cases &middot; {dlc.status}
                 </div>
               </button>
@@ -303,9 +303,9 @@ export default function DLCMatrix() {
 
           {/* DLC detail */}
           {selectedDlc && editForm && (
-            <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 space-y-6">
+            <div className="lg:col-span-2 rounded-xl border border-slate-600 bg-surface-dark-secondary p-6 space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">Edit DLC Definition</h3>
+                <h3 className="text-lg font-semibold text-slate-100">Edit DLC Definition</h3>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSave}
@@ -328,20 +328,20 @@ export default function DLCMatrix() {
               {/* Name + turbine model */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Name</label>
                   <input
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Turbine Model</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Turbine Model</label>
                   <select
                     value={editForm.turbine_model_id}
                     onChange={(e) => setEditForm({ ...editForm, turbine_model_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   >
                     <option value="">-- Select --</option>
                     {turbineModels.map((m) => (
@@ -354,12 +354,12 @@ export default function DLCMatrix() {
               {/* DLC Cases */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider">
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
                     DLC Cases ({editForm.dlc_cases.length})
                   </h4>
                   <button
                     onClick={addCase}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-accent-700 bg-accent-50 rounded-lg hover:bg-accent-100"
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-accent-300 bg-accent-950/30 rounded-lg hover:bg-accent-950/50"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add DLC Case
@@ -369,48 +369,48 @@ export default function DLCMatrix() {
                 {editForm.dlc_cases.length > 0 ? (
                   <div className="space-y-3">
                     {editForm.dlc_cases.map((c, i) => (
-                      <div key={i} className="rounded-lg border border-slate-200 p-4">
+                      <div key={i} className="rounded-lg border border-slate-600 p-4">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-medium text-slate-700">Case #{i + 1}</span>
+                          <span className="text-sm font-medium text-slate-200">Case #{i + 1}</span>
                           <button onClick={() => removeCase(i)} className="text-slate-400 hover:text-danger-500">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">DLC Number</label>
+                            <label className="block text-xs text-slate-400 mb-0.5">DLC Number</label>
                             <input
                               type="text"
                               value={c.dlc_number}
                               onChange={(e) => updateCase(i, 'dlc_number', e.target.value)}
-                              className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                              className="w-full rounded border border-slate-600 bg-surface-dark-secondary px-2 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">Seeds</label>
+                            <label className="block text-xs text-slate-400 mb-0.5">Seeds</label>
                             <input
                               type="number"
                               value={c.seeds}
                               onChange={(e) => updateCase(i, 'seeds', parseInt(e.target.value) || 1)}
-                              className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                              className="w-full rounded border border-slate-600 bg-surface-dark-secondary px-2 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">Wind Speeds (comma-separated)</label>
+                            <label className="block text-xs text-slate-400 mb-0.5">Wind Speeds (comma-separated)</label>
                             <input
                               type="text"
                               value={c.wind_speeds.join(', ')}
                               onChange={(e) => updateCase(i, 'wind_speeds', parseNumberArray(e.target.value))}
-                              className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                              className="w-full rounded border border-slate-600 bg-surface-dark-secondary px-2 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">Yaw Misalignments (comma-separated)</label>
+                            <label className="block text-xs text-slate-400 mb-0.5">Yaw Misalignments (comma-separated)</label>
                             <input
                               type="text"
                               value={c.yaw_misalignments.join(', ')}
                               onChange={(e) => updateCase(i, 'yaw_misalignments', parseNumberArray(e.target.value))}
-                              className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                              className="w-full rounded border border-slate-600 bg-surface-dark-secondary px-2 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                             />
                           </div>
                         </div>
@@ -418,17 +418,17 @@ export default function DLCMatrix() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-lg border-2 border-dashed border-slate-200 p-8 text-center">
-                    <p className="text-sm text-slate-500">No DLC cases. Click "Add DLC Case" to begin.</p>
+                  <div className="rounded-lg border-2 border-dashed border-slate-600 p-8 text-center">
+                    <p className="text-sm text-slate-400">No DLC cases. Click "Add DLC Case" to begin.</p>
                   </div>
                 )}
               </div>
 
               {/* Total case count */}
-              <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-sm text-slate-600">
+              <div className="rounded-lg bg-surface-dark-tertiary p-3">
+                <p className="text-sm text-slate-300">
                   Total simulation cases:{' '}
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold text-slate-100">
                     {computeTotalCases(editForm.dlc_cases)}
                   </span>
                 </p>
@@ -436,69 +436,69 @@ export default function DLCMatrix() {
 
               {/* TurbSim params */}
               <div>
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
                   TurbSim Parameters
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Turbulence Model</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Turbulence Model</label>
                     <input type="text" value={editForm.turbsim_params.turbulence_model}
                       onChange={(e) => updateTurbsim('turbulence_model', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">IEC Standard</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">IEC Standard</label>
                     <input type="text" value={editForm.turbsim_params.iec_standard}
                       onChange={(e) => updateTurbsim('iec_standard', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">IEC Turbulence Class</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">IEC Turbulence Class</label>
                     <input type="text" value={editForm.turbsim_params.iec_turbc}
                       onChange={(e) => updateTurbsim('iec_turbc', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Grid Height (m)</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Grid Height (m)</label>
                     <input type="number" value={editForm.turbsim_params.grid_height}
                       onChange={(e) => updateTurbsim('grid_height', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Grid Width (m)</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Grid Width (m)</label>
                     <input type="number" value={editForm.turbsim_params.grid_width}
                       onChange={(e) => updateTurbsim('grid_width', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Num Grid Z</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Num Grid Z</label>
                     <input type="number" value={editForm.turbsim_params.num_grid_z}
                       onChange={(e) => updateTurbsim('num_grid_z', parseInt(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Num Grid Y</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Num Grid Y</label>
                     <input type="number" value={editForm.turbsim_params.num_grid_y}
                       onChange={(e) => updateTurbsim('num_grid_y', parseInt(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Time Step (s)</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Time Step (s)</label>
                     <input type="number" step="0.01" value={editForm.turbsim_params.time_step}
                       onChange={(e) => updateTurbsim('time_step', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Analysis Time (s)</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Analysis Time (s)</label>
                     <input type="number" value={editForm.turbsim_params.analysis_time}
                       onChange={(e) => updateTurbsim('analysis_time', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">Ref Height (m)</label>
+                    <label className="block text-xs text-slate-400 mb-0.5">Ref Height (m)</label>
                     <input type="number" value={editForm.turbsim_params.ref_height}
                       onChange={(e) => updateTurbsim('ref_height', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-1.5 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                 </div>
               </div>

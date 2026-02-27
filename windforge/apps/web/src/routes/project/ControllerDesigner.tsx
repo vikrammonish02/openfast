@@ -192,8 +192,8 @@ export default function ControllerDesigner() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Controller Designer</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-xl font-bold text-slate-100">Controller Designer</h2>
+          <p className="text-sm text-slate-400">
             Configure pitch and torque controller parameters
           </p>
         </div>
@@ -209,30 +209,30 @@ export default function ControllerDesigner() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+          <div className="bg-surface-dark-secondary rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">New Controller</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-lg font-semibold text-slate-100">New Controller</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-300">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Name</label>
                 <input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g., Baseline Controller"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Controller Type</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Controller Type</label>
                 <select
                   value={newType}
                   onChange={(e) => setNewType(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="baseline">Baseline</option>
                   <option value="ROSCO">ROSCO</option>
@@ -243,7 +243,7 @@ export default function ControllerDesigner() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                className="px-4 py-2 text-sm font-medium text-slate-200 bg-surface-dark-tertiary rounded-lg hover:bg-surface-dark-tertiary"
               >
                 Cancel
               </button>
@@ -261,10 +261,10 @@ export default function ControllerDesigner() {
       )}
 
       {controllers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-600 py-16">
           <Gauge className="h-12 w-12 text-slate-300 mb-3" />
-          <h3 className="text-base font-semibold text-slate-700">No controllers defined</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <h3 className="text-base font-semibold text-slate-200">No controllers defined</h3>
+          <p className="mt-1 text-sm text-slate-400">
             Create your first controller configuration.
           </p>
         </div>
@@ -279,12 +279,12 @@ export default function ControllerDesigner() {
                 className={clsx(
                   'w-full rounded-lg border p-4 text-left transition-all',
                   selectedController?.id === ctrl.id
-                    ? 'border-accent-300 bg-accent-50 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300',
+                    ? 'border-accent-500 bg-accent-950/30 shadow-sm'
+                    : 'border-slate-600 bg-surface-dark-secondary hover:border-slate-500',
                 )}
               >
-                <span className="font-medium text-slate-800">{ctrl.name}</span>
-                <div className="mt-1 text-xs text-slate-500">
+                <span className="font-medium text-slate-100">{ctrl.name}</span>
+                <div className="mt-1 text-xs text-slate-400">
                   {ctrl.controller_type} &middot; PCMode {ctrl.pcmode}
                 </div>
               </button>
@@ -293,9 +293,9 @@ export default function ControllerDesigner() {
 
           {/* Controller detail */}
           {selectedController && editForm && (
-            <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6">
+            <div className="lg:col-span-2 rounded-xl border border-slate-600 bg-surface-dark-secondary p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-slate-800">Edit Controller</h3>
+                <h3 className="text-lg font-semibold text-slate-100">Edit Controller</h3>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSave}
@@ -318,20 +318,20 @@ export default function ControllerDesigner() {
               {/* Basic fields */}
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Name</label>
                   <input
                     type="text"
                     value={editForm.name}
                     onChange={(e) => updateField('name', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Controller Type</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Controller Type</label>
                   <select
                     value={editForm.controller_type}
                     onChange={(e) => updateField('controller_type', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   >
                     <option value="baseline">Baseline</option>
                     <option value="ROSCO">ROSCO</option>
@@ -339,21 +339,21 @@ export default function ControllerDesigner() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">PCMode</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">PCMode</label>
                   <input
                     type="number"
                     value={editForm.pcmode}
                     onChange={(e) => updateField('pcmode', parseInt(e.target.value) || 0)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">VSContrl</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">VSContrl</label>
                   <input
                     type="number"
                     value={editForm.vscontrl}
                     onChange={(e) => updateField('vscontrl', parseInt(e.target.value) || 0)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
               </div>
@@ -362,19 +362,19 @@ export default function ControllerDesigner() {
               <div className="grid grid-cols-2 gap-6 mb-6">
                 {/* Pitch Parameters */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider">
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
                     Pitch Control
                   </h4>
                   <div className="space-y-2">
                     {PITCH_PARAMS.map((key) => (
                       <div key={key}>
-                        <label className="block text-xs text-slate-500 mb-0.5">{PARAM_LABELS[key]}</label>
+                        <label className="block text-xs text-slate-400 mb-0.5">{PARAM_LABELS[key]}</label>
                         <input
                           type="number"
                           step="any"
                           value={editForm.parameters[key] ?? 0}
                           onChange={(e) => updateParam(key, parseFloat(e.target.value) || 0)}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                          className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                         />
                       </div>
                     ))}
@@ -383,19 +383,19 @@ export default function ControllerDesigner() {
 
                 {/* Torque Parameters */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider">
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
                     Torque Control
                   </h4>
                   <div className="space-y-2">
                     {TORQUE_PARAMS.map((key) => (
                       <div key={key}>
-                        <label className="block text-xs text-slate-500 mb-0.5">{PARAM_LABELS[key]}</label>
+                        <label className="block text-xs text-slate-400 mb-0.5">{PARAM_LABELS[key]}</label>
                         <input
                           type="number"
                           step="any"
                           value={editForm.parameters[key] ?? 0}
                           onChange={(e) => updateParam(key, parseFloat(e.target.value) || 0)}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                          className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                         />
                       </div>
                     ))}
@@ -405,19 +405,19 @@ export default function ControllerDesigner() {
 
               {/* General Parameters */}
               <div className="mb-6">
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
                   General
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
                   {GENERAL_PARAMS.map((key) => (
                     <div key={key}>
-                      <label className="block text-xs text-slate-500 mb-0.5">{PARAM_LABELS[key]}</label>
+                      <label className="block text-xs text-slate-400 mb-0.5">{PARAM_LABELS[key]}</label>
                       <input
                         type="number"
                         step="any"
                         value={editForm.parameters[key] ?? 0}
                         onChange={(e) => updateParam(key, parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                        className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-1.5 text-sm font-mono focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                       />
                     </div>
                   ))}
@@ -425,28 +425,28 @@ export default function ControllerDesigner() {
               </div>
 
               {/* DLL fields */}
-              <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">
+              <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
                 DLL Configuration
               </h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">DLL Filename</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">DLL Filename</label>
                   <input
                     type="text"
                     value={editForm.dll_filename}
                     onChange={(e) => updateField('dll_filename', e.target.value)}
                     placeholder="e.g., DISCON.dll"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">DLL Procedure Name</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">DLL Procedure Name</label>
                   <input
                     type="text"
                     value={editForm.dll_procname}
                     onChange={(e) => updateField('dll_procname', e.target.value)}
                     placeholder="e.g., DISCON"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                    className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                   />
                 </div>
               </div>

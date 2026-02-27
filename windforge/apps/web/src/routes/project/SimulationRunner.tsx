@@ -194,7 +194,7 @@ export default function SimulationRunner() {
 
   const statusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-slate-100 text-slate-700',
+      pending: 'bg-surface-dark-tertiary text-slate-200',
       running: 'bg-accent-100 text-accent-700',
       completed: 'bg-success-100 text-success-700',
       failed: 'bg-danger-100 text-danger-700',
@@ -220,8 +220,8 @@ export default function SimulationRunner() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Simulation Runner</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-xl font-bold text-slate-100">Simulation Runner</h2>
+          <p className="text-sm text-slate-400">
             Launch and monitor OpenFAST simulations
           </p>
         </div>
@@ -237,30 +237,30 @@ export default function SimulationRunner() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+          <div className="bg-surface-dark-secondary rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">New Simulation</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-lg font-semibold text-slate-100">New Simulation</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-300">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Name</label>
                 <input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g., Run 001"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">DLC Definition</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">DLC Definition</label>
                 <select
                   value={newDlcId}
                   onChange={(e) => setNewDlcId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="">-- Select --</option>
                   {dlcDefs.map((d) => (
@@ -269,11 +269,11 @@ export default function SimulationRunner() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Turbine Model</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Turbine Model</label>
                 <select
                   value={newTurbineModelId}
                   onChange={(e) => setNewTurbineModelId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="">-- Select --</option>
                   {turbineModels.map((m) => (
@@ -285,7 +285,7 @@ export default function SimulationRunner() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                className="px-4 py-2 text-sm font-medium text-slate-200 bg-surface-dark-tertiary rounded-lg hover:bg-surface-dark-tertiary"
               >
                 Cancel
               </button>
@@ -303,10 +303,10 @@ export default function SimulationRunner() {
       )}
 
       {simulations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-600 py-16">
           <Play className="h-12 w-12 text-slate-300 mb-3" />
-          <h3 className="text-base font-semibold text-slate-700">No simulations</h3>
-          <p className="mt-1 text-sm text-slate-500 max-w-sm text-center">
+          <h3 className="text-base font-semibold text-slate-200">No simulations</h3>
+          <p className="mt-1 text-sm text-slate-400 max-w-sm text-center">
             Create a simulation by selecting a turbine model and DLC definition.
           </p>
         </div>
@@ -321,19 +321,19 @@ export default function SimulationRunner() {
                 className={clsx(
                   'w-full rounded-lg border p-4 text-left transition-all',
                   selectedSim?.id === sim.id
-                    ? 'border-accent-300 bg-accent-50 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300',
+                    ? 'border-accent-500 bg-accent-950/30 shadow-sm'
+                    : 'border-slate-600 bg-surface-dark-secondary hover:border-slate-500',
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-slate-800">{sim.name}</span>
+                  <span className="font-medium text-slate-100">{sim.name}</span>
                   {statusIcon(sim.status)}
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
+                <div className="mt-1 text-xs text-slate-400">
                   {sim.completed_cases}/{sim.total_cases} cases &middot; {sim.status}
                 </div>
                 {sim.status === 'running' && (
-                  <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200">
+                  <div className="mt-2 h-1.5 w-full rounded-full bg-slate-600">
                     <div
                       className="h-full rounded-full bg-accent-500 transition-all duration-500"
                       style={{
@@ -348,10 +348,10 @@ export default function SimulationRunner() {
 
           {/* Simulation detail */}
           {selectedSim && (
-            <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6">
+            <div className="lg:col-span-2 rounded-xl border border-slate-600 bg-surface-dark-secondary p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-800">{selectedSim.name}</h3>
+                  <h3 className="text-lg font-semibold text-slate-100">{selectedSim.name}</h3>
                   <div className="mt-1">{statusBadge(selectedSim.status)}</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -377,14 +377,14 @@ export default function SimulationRunner() {
               </div>
 
               {/* Overall progress */}
-              <div className="mb-6 rounded-lg bg-slate-50 p-4">
+              <div className="mb-6 rounded-lg bg-surface-dark-tertiary p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-700">Overall Progress</span>
-                  <span className="text-sm font-mono text-slate-600">
+                  <span className="text-sm font-medium text-slate-200">Overall Progress</span>
+                  <span className="text-sm font-mono text-slate-300">
                     {selectedSim.completed_cases}/{selectedSim.total_cases}
                   </span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-slate-200">
+                <div className="h-2 w-full rounded-full bg-slate-600">
                   <div
                     className="h-full rounded-full bg-accent-500 transition-all duration-500"
                     style={{
@@ -401,32 +401,32 @@ export default function SimulationRunner() {
 
               {/* Cases table */}
               {cases.length > 0 && (
-                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <div className="overflow-x-auto rounded-lg border border-slate-600">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50">
+                    <thead className="bg-surface-dark-tertiary">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">DLC</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Wind (m/s)</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Seed</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Progress</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">DLC</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Wind (m/s)</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Seed</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Progress</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-700">
                       {cases.map((c) => (
-                        <tr key={c.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2 font-medium text-slate-800">{c.dlc_number}</td>
-                          <td className="px-3 py-2 text-slate-700">{c.wind_speed}</td>
-                          <td className="px-3 py-2 text-slate-700">{c.seed_number}</td>
+                        <tr key={c.id} className="hover:bg-surface-dark-tertiary">
+                          <td className="px-3 py-2 font-medium text-slate-100">{c.dlc_number}</td>
+                          <td className="px-3 py-2 text-slate-200">{c.wind_speed}</td>
+                          <td className="px-3 py-2 text-slate-200">{c.seed_number}</td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-1.5">
                               {statusIcon(c.status)}
-                              <span className="text-slate-700 capitalize">{c.status}</span>
+                              <span className="text-slate-200 capitalize">{c.status}</span>
                             </div>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-20 rounded-full bg-slate-200">
+                              <div className="h-1.5 w-20 rounded-full bg-slate-600">
                                 <div
                                   className={clsx(
                                     'h-full rounded-full transition-all duration-300',
@@ -439,7 +439,7 @@ export default function SimulationRunner() {
                                   style={{ width: `${c.progress_percent}%` }}
                                 />
                               </div>
-                              <span className="text-xs font-mono text-slate-500 w-8">
+                              <span className="text-xs font-mono text-slate-400 w-8">
                                 {c.progress_percent}%
                               </span>
                             </div>

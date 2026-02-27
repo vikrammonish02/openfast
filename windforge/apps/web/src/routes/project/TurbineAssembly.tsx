@@ -211,8 +211,8 @@ export default function TurbineAssembly() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Turbine Assembly</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-xl font-bold text-slate-100">Turbine Assembly</h2>
+          <p className="text-sm text-slate-400">
             Combine tower, blade, and controller into a complete turbine model
           </p>
         </div>
@@ -228,27 +228,27 @@ export default function TurbineAssembly() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+          <div className="bg-surface-dark-secondary rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">New Turbine Model</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-lg font-semibold text-slate-100">New Turbine Model</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-300">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-slate-200 mb-1">Name</label>
               <input
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g., NREL 5MW"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
               />
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+                className="px-4 py-2 text-sm font-medium text-slate-200 bg-surface-dark-tertiary rounded-lg hover:bg-surface-dark-tertiary"
               >
                 Cancel
               </button>
@@ -266,10 +266,10 @@ export default function TurbineAssembly() {
       )}
 
       {models.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-600 py-16">
           <Boxes className="h-12 w-12 text-slate-300 mb-3" />
-          <h3 className="text-base font-semibold text-slate-700">No turbine assemblies</h3>
-          <p className="mt-1 text-sm text-slate-500 max-w-sm text-center">
+          <h3 className="text-base font-semibold text-slate-200">No turbine assemblies</h3>
+          <p className="mt-1 text-sm text-slate-400 max-w-sm text-center">
             Define tower, blade, and controller first, then assemble them into a complete turbine model.
           </p>
         </div>
@@ -284,12 +284,12 @@ export default function TurbineAssembly() {
                 className={clsx(
                   'w-full rounded-lg border p-4 text-left transition-all',
                   selectedModel?.id === model.id
-                    ? 'border-accent-300 bg-accent-50 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300',
+                    ? 'border-accent-500 bg-accent-950/30 shadow-sm'
+                    : 'border-slate-600 bg-surface-dark-secondary hover:border-slate-500',
                 )}
               >
-                <span className="font-medium text-slate-800">{model.name}</span>
-                <div className="mt-1 text-xs text-slate-500">
+                <span className="font-medium text-slate-100">{model.name}</span>
+                <div className="mt-1 text-xs text-slate-400">
                   GR {model.gearbox_ratio ?? '--'}
                 </div>
               </button>
@@ -298,9 +298,9 @@ export default function TurbineAssembly() {
 
           {/* Model detail */}
           {selectedModel && editForm && (
-            <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 space-y-6">
+            <div className="lg:col-span-2 rounded-xl border border-slate-600 bg-surface-dark-secondary p-6 space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">Edit Turbine Model</h3>
+                <h3 className="text-lg font-semibold text-slate-100">Edit Turbine Model</h3>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSave}
@@ -322,25 +322,25 @@ export default function TurbineAssembly() {
 
               {/* Name */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Name</label>
                 <input
                   type="text"
                   value={editForm.name}
                   onChange={(e) => updateField('name', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                  className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                 />
               </div>
 
               {/* Component dropdowns */}
               <div>
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">Components</h4>
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Components</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Tower</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Tower</label>
                     <select
                       value={editForm.tower_id}
                       onChange={(e) => updateField('tower_id', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                     >
                       <option value="">-- Select --</option>
                       {towers.map((t) => (
@@ -349,11 +349,11 @@ export default function TurbineAssembly() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Blade</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Blade</label>
                     <select
                       value={editForm.blade_id}
                       onChange={(e) => updateField('blade_id', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                     >
                       <option value="">-- Select --</option>
                       {blades.map((b) => (
@@ -362,11 +362,11 @@ export default function TurbineAssembly() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Controller</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Controller</label>
                     <select
                       value={editForm.controller_id}
                       onChange={(e) => updateField('controller_id', e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                     >
                       <option value="">-- Select --</option>
                       {controllers.map((c) => (
@@ -379,108 +379,108 @@ export default function TurbineAssembly() {
 
               {/* Drivetrain */}
               <div>
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">Drivetrain</h4>
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Drivetrain</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Gearbox Ratio</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Gearbox Ratio</label>
                     <input type="number" step="0.01" value={editForm.gearbox_ratio}
                       onChange={(e) => updateField('gearbox_ratio', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Generator Inertia (kg*m2)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Generator Inertia (kg*m2)</label>
                     <input type="number" step="0.1" value={editForm.generator_inertia}
                       onChange={(e) => updateField('generator_inertia', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Drivetrain Stiffness (Nm/rad)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Drivetrain Stiffness (Nm/rad)</label>
                     <input type="number" step="1e6" value={editForm.drivetrain_stiffness}
                       onChange={(e) => updateField('drivetrain_stiffness', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Drivetrain Damping (Nm/(rad/s))</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Drivetrain Damping (Nm/(rad/s))</label>
                     <input type="number" step="1e4" value={editForm.drivetrain_damping}
                       onChange={(e) => updateField('drivetrain_damping', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                 </div>
               </div>
 
               {/* Hub / Nacelle */}
               <div>
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">Hub / Nacelle</h4>
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Hub / Nacelle</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Hub Mass (kg)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Hub Mass (kg)</label>
                     <input type="number" step="1" value={editForm.hub_mass}
                       onChange={(e) => updateField('hub_mass', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Hub Inertia (kg*m2)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Hub Inertia (kg*m2)</label>
                     <input type="number" step="1" value={editForm.hub_inertia}
                       onChange={(e) => updateField('hub_inertia', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Nacelle Mass (kg)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Nacelle Mass (kg)</label>
                     <input type="number" step="1" value={editForm.nacelle_mass}
                       onChange={(e) => updateField('nacelle_mass', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Nacelle Inertia (kg*m2)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Nacelle Inertia (kg*m2)</label>
                     <input type="number" step="1" value={editForm.nacelle_inertia}
                       onChange={(e) => updateField('nacelle_inertia', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Overhang (m)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Overhang (m)</label>
                     <input type="number" step="0.01" value={editForm.overhang}
                       onChange={(e) => updateField('overhang', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Shaft Tilt (deg)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Shaft Tilt (deg)</label>
                     <input type="number" step="0.1" value={editForm.shaft_tilt}
                       onChange={(e) => updateField('shaft_tilt', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Precone (deg)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Precone (deg)</label>
                     <input type="number" step="0.1" value={editForm.precone}
                       onChange={(e) => updateField('precone', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Rotor Speed Rated (rpm)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Rotor Speed Rated (rpm)</label>
                     <input type="number" step="0.1" value={editForm.rotor_speed_rated}
                       onChange={(e) => updateField('rotor_speed_rated', parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
+                      className="w-full rounded-lg border border-slate-600 bg-surface-dark-secondary text-slate-100 placeholder-slate-400 px-3 py-2 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500" />
                   </div>
                 </div>
               </div>
 
               {/* DOF Flags */}
               <div>
-                <h4 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">
+                <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
                   Degrees of Freedom
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {Object.entries(editForm.dof_flags).map(([key, val]) => (
                     <label
                       key={key}
-                      className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 cursor-pointer hover:bg-slate-100"
+                      className="flex items-center gap-2 rounded-lg bg-surface-dark-tertiary px-3 py-2 cursor-pointer hover:bg-surface-dark-tertiary"
                     >
                       <input
                         type="checkbox"
                         checked={val}
                         onChange={() => toggleDof(key)}
-                        className="rounded border-slate-300 text-accent-600 focus:ring-accent-500"
+                        className="rounded border-slate-600 text-accent-600 focus:ring-accent-500"
                       />
-                      <span className="text-sm text-slate-700">{key}</span>
+                      <span className="text-sm text-slate-200">{key}</span>
                     </label>
                   ))}
                 </div>
