@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
@@ -12,31 +12,37 @@ from pydantic import BaseModel, Field
 class TowerStationSchema(BaseModel):
     """A single tower distributed-property station."""
 
-    frac: float = Field(..., ge=0.0, le=1.0, description="Fractional height (0=base, 1=top)")
-    mass_den: float = Field(..., gt=0, description="Mass density (kg/m)")
-    fa_stiff: float = Field(..., gt=0, description="Fore-aft stiffness (N m^2)")
-    ss_stiff: float = Field(..., gt=0, description="Side-side stiffness (N m^2)")
-    outer_diameter: float = Field(..., gt=0, description="Outer diameter (m)")
-    wall_thickness: float = Field(..., gt=0, description="Wall thickness (m)")
+    model_config = {"populate_by_name": True}
+
+    frac: float = Field(..., ge=0.0, le=1.0, description="Fractional height (0=base, 1=top)", validation_alias=AliasChoices("frac", "height_fraction"))
+    mass_den: float = Field(..., gt=0, description="Mass density (kg/m)", validation_alias=AliasChoices("mass_den", "mass_density_kg_m"))
+    fa_stiff: float = Field(..., gt=0, description="Fore-aft stiffness (N m^2)", validation_alias=AliasChoices("fa_stiff", "FA_stiffness_Nm2"))
+    ss_stiff: float = Field(..., gt=0, description="Side-side stiffness (N m^2)", validation_alias=AliasChoices("ss_stiff", "SS_stiffness_Nm2"))
+    outer_diameter: float = Field(..., gt=0, description="Outer diameter (m)", validation_alias=AliasChoices("outer_diameter", "outer_diameter_m"))
+    wall_thickness: float = Field(..., gt=0, description="Wall thickness (m)", validation_alias=AliasChoices("wall_thickness", "wall_thickness_m"))
 
 
 class BladeStructuralStationSchema(BaseModel):
     """A single blade structural station."""
 
-    frac: float = Field(..., ge=0.0, le=1.0)
+    model_config = {"populate_by_name": True}
+
+    frac: float = Field(..., ge=0.0, le=1.0, validation_alias=AliasChoices("frac", "fraction"))
     pitch_axis: float = Field(..., ge=0.0, le=1.0)
-    struct_twist: float  # deg
-    mass_den: float = Field(..., gt=0)  # kg/m
-    flap_stiff: float = Field(..., gt=0)  # N m^2
-    edge_stiff: float = Field(..., gt=0)  # N m^2
+    struct_twist: float = Field(..., validation_alias=AliasChoices("struct_twist", "structural_twist_deg"))  # deg
+    mass_den: float = Field(..., gt=0, validation_alias=AliasChoices("mass_den", "mass_density_kg_m"))  # kg/m
+    flap_stiff: float = Field(..., gt=0, validation_alias=AliasChoices("flap_stiff", "flapwise_stiffness_Nm2"))  # N m^2
+    edge_stiff: float = Field(..., gt=0, validation_alias=AliasChoices("edge_stiff", "edgewise_stiffness_Nm2"))  # N m^2
 
 
 class BladeAeroStationSchema(BaseModel):
     """A single blade aerodynamic station."""
 
-    frac: float = Field(..., ge=0.0, le=1.0)
-    chord: float = Field(..., gt=0)  # m
-    aero_twist: float  # deg
+    model_config = {"populate_by_name": True}
+
+    frac: float = Field(..., ge=0.0, le=1.0, validation_alias=AliasChoices("frac", "fraction"))
+    chord: float = Field(..., gt=0, validation_alias=AliasChoices("chord", "chord_m"))  # m
+    aero_twist: float = Field(..., validation_alias=AliasChoices("aero_twist", "aero_twist_deg"))  # deg
     airfoil_id: str  # UUID as string
     aero_center: float = Field(default=0.25, ge=0.0, le=1.0)
 
