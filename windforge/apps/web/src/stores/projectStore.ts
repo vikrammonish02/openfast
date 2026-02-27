@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { projectsApi } from '@/api/client';
+import { projectsApi, templatesApi } from '@/api/client';
 import type { Project, ProjectCreate } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -16,6 +16,12 @@ interface ProjectState {
     data: Partial<ProjectCreate>,
   ) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
+  createProjectFromTemplate: (data: {
+    template_id: string;
+    name: string;
+    description?: string;
+    platform_type?: string;
+  }) => Promise<Project>;
   clearCurrentProject: () => void;
 }
 
@@ -104,6 +110,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       toast.success('Project deleted');
     } catch {
       toast.error('Failed to delete project');
+    }
+  },
+
+  createProjectFromTemplate: async (data) => {
+    try {
+      set({ isLoading: true });
+      const project = await templatesApi.createProject(data);
+      set((state) => ({
+        projects: [project, ...state.projects],
+        isLoading: false,
+      }));
+      toast.success(`Project "${project.name}" created from template`);
+      return project;
+    } catch (err) {
+      set({ isLoading: false });
+      const message =
+        (err as { response?: { data?: { detail?: string } } }).response?.data
+          ?.detail || 'Failed to create project from template';
+      toast.error(message);
+      throw err;
     }
   },
 

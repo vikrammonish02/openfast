@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, blades, controllers, projects, towers, turbine_models, websocket
+from app.routers import auth, blades, controllers, projects, templates, towers, turbine_models, websocket
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -68,6 +68,7 @@ app.include_router(turbine_models.router, prefix="/api/v1")
 app.include_router(simulations_router, prefix="/api/v1")
 app.include_router(dlc_router, prefix="/api/v1")
 app.include_router(websocket.router)
+app.include_router(templates.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

@@ -261,6 +261,11 @@ class TurbineModel(Base):
     # DOF flags — JSON dict e.g. {"FlapDOF1": true, "EdgeDOF1": true, ...}
     dof_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Offshore configuration (JSON blobs)
+    substructure_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    hydrodyn_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    moordyn_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

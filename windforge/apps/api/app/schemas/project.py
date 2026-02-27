@@ -31,6 +31,9 @@ class ProjectCreate(BaseModel):
     dt: float | None = Field(None, gt=0, le=1.0)
     t_max: float | None = Field(None, gt=0)
 
+    platform_type: str = Field(default="onshore", pattern=r"^(onshore|monopile|jacket|spar|semi_submersible|tlp)$")
+    water_depth: float | None = Field(None, ge=0)
+
 
 class ProjectUpdate(BaseModel):
     """Payload for partially updating a project."""
@@ -50,6 +53,8 @@ class ProjectUpdate(BaseModel):
     rated_speed: float | None = None
     dt: float | None = None
     t_max: float | None = None
+    platform_type: str | None = None
+    water_depth: float | None = None
     status: str | None = None
 
 
@@ -77,6 +82,9 @@ class ProjectResponse(BaseModel):
 
     dt: float | None = None
     t_max: float | None = None
+
+    platform_type: str
+    water_depth: float | None = None
 
     status: str
     created_at: datetime

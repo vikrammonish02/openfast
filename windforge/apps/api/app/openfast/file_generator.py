@@ -34,6 +34,9 @@ from .inflowwind_generator import (
     WindType,
 )
 from .turbsim_generator import TurbSimConfig, TurbSimGenerator
+from .hydrodyn_generator import HydroDynConfig, HydroDynGenerator
+from .subdyn_generator import SubDynConfig, SubDynGenerator
+from .moordyn_generator import MoorDynConfig, MoorDynGenerator
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +77,13 @@ class TurbineModel:
     servodyn_config: Optional[ServoDynConfig] = None
     discon_config: Optional[DISCONConfig] = None
 
+    # Offshore
+    platform_type: str = "onshore"
+    water_depth: float = 0.0
+    hydrodyn_config: Optional[HydroDynConfig] = None
+    subdyn_config: Optional[SubDynConfig] = None
+    moordyn_config: Optional[MoorDynConfig] = None
+
 
 @dataclass
 class SimulationCase:
@@ -98,6 +108,12 @@ class SimulationCase:
 
     # Inflow
     inflowwind_config: Optional[InflowWindConfig] = None
+
+    # Sea state (offshore only)
+    wave_hs: float = 0.0
+    wave_tp: float = 0.0
+    wave_dir: float = 0.0
+    wave_seed: int = 123456789
 
 
 @dataclass
@@ -136,6 +152,9 @@ class OpenFASTFileGenerator:
         self._srvd_gen = ServoDynGenerator()
         self._ifw_gen = InflowWindGenerator()
         self._ts_gen = TurbSimGenerator()
+        self._hd_gen = HydroDynGenerator()
+        self._sd_gen = SubDynGenerator()
+        self._md_gen = MoorDynGenerator()
 
     def generate_all(
         self,
@@ -246,6 +265,37 @@ class OpenFASTFileGenerator:
             files[ts_file] = self._ts_gen.generate_turbsim_input(ts_config)
 
         # ----------------------------------------------------------------
+        # 5a. Offshore files (only for non-onshore platforms)
+        # ----------------------------------------------------------------
+        is_offshore = turbine_model.platform_type != "onshore"
+        is_floating = turbine_model.platform_type in ("spar", "semi_submersible", "tlp")
+
+        hd_file = f"{root_name}_HydroDyn.dat"
+        sd_file = f"{root_name}_SubDyn.dat"
+        md_file = f"{root_name}_MoorDyn.dat"
+
+        if is_offshore:
+            # HydroDyn
+            hd_config = turbine_model.hydrodyn_config or HydroDynConfig(
+                wtr_dpth=turbine_model.water_depth,
+                wave_hs=sim_case.wave_hs if sim_case.wave_hs > 0 else 1.5,
+                wave_tp=sim_case.wave_tp if sim_case.wave_tp > 0 else 8.0,
+                wave_dir=sim_case.wave_dir,
+                wave_seed1=sim_case.wave_seed,
+            )
+            files[hd_file] = self._hd_gen.generate(hd_config)
+
+            # SubDyn (for fixed-bottom: monopile, jacket)
+            if not is_floating:
+                sd_config = turbine_model.subdyn_config or SubDynConfig()
+                files[sd_file] = self._sd_gen.generate(sd_config)
+
+            # MoorDyn (for floating platforms)
+            if is_floating:
+                md_config = turbine_model.moordyn_config or MoorDynConfig()
+                files[md_file] = self._md_gen.generate(md_config)
+
+        # ----------------------------------------------------------------
         # 6. Primary .fst file (must reference all other files)
         # ----------------------------------------------------------------
         fst_config = FSTConfig(
@@ -255,16 +305,20 @@ class OpenFASTFileGenerator:
             comp_inflow=1 if sim_case.wind_type > 0 else 0,
             comp_aero=2,
             comp_servo=1,
-            comp_hydro=0,
-            comp_sub=0,
-            comp_mooring=0,
+            comp_hydro=1 if is_offshore else 0,
+            comp_sub=1 if (is_offshore and not is_floating) else 0,
+            comp_mooring=3 if is_floating else 0,
             comp_ice=0,
             air_dens=1.225,
             gravity=9.80665,
+            wtr_dpth=turbine_model.water_depth if is_offshore else 0.0,
             ed_file=ed_main_file,
             inflow_file=ifw_file,
             aero_file=ad_main_file,
             servo_file=srvd_file,
+            hydro_file=hd_file if is_offshore else "",
+            sub_file=sd_file if (is_offshore and not is_floating) else "",
+            mooring_file=md_file if is_floating else "",
         )
         files[f"{root_name}.fst"] = self._fst_gen.generate(
             fst_config, root_name=root_name

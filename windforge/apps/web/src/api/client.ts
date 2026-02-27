@@ -20,6 +20,7 @@ import type {
   ResultsStatistics,
   ResultsDEL,
   ResultsExtreme,
+  ReferenceTemplate,
 } from '@/types';
 
 export type { SimulationCase } from '@/types';
@@ -103,6 +104,25 @@ export const projectsApi = {
 
   delete: async (projectId: string): Promise<void> => {
     await api.delete(`/projects/${projectId}`);
+  },
+};
+
+// ─── Templates API ────────────────────────────────────────────────────────
+
+export const templatesApi = {
+  list: async (): Promise<ReferenceTemplate[]> => {
+    const res = await api.get<ReferenceTemplate[]>('/templates');
+    return res.data;
+  },
+
+  createProject: async (data: {
+    template_id: string;
+    name: string;
+    description?: string;
+    platform_type?: string;
+  }): Promise<Project> => {
+    const res = await api.post<Project>('/templates/create-project', data);
+    return res.data;
   },
 };
 

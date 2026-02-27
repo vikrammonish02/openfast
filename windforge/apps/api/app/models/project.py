@@ -47,6 +47,10 @@ class Project(Base):
     cut_out_speed: Mapped[float | None] = mapped_column(Float, nullable=True)  # m/s
     rated_speed: Mapped[float | None] = mapped_column(Float, nullable=True)  # m/s
 
+    # Offshore
+    platform_type: Mapped[str] = mapped_column(String(30), default="onshore", nullable=False)
+    water_depth: Mapped[float | None] = mapped_column(Float, nullable=True)  # m
+
     # Simulation defaults
     dt: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.005)  # s
     t_max: Mapped[float | None] = mapped_column(Float, nullable=True, default=660.0)  # s

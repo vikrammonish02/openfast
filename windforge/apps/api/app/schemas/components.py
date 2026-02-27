@@ -245,6 +245,9 @@ class TurbineModelCreate(BaseModel):
     precone: float | None = None
     rotor_speed_rated: float | None = None
     dof_flags: dict | None = None
+    substructure_config: dict | None = None
+    hydrodyn_config: dict | None = None
+    moordyn_config: dict | None = None
 
 
 class TurbineModelUpdate(BaseModel):
@@ -265,6 +268,9 @@ class TurbineModelUpdate(BaseModel):
     precone: float | None = None
     rotor_speed_rated: float | None = None
     dof_flags: dict | None = None
+    substructure_config: dict | None = None
+    hydrodyn_config: dict | None = None
+    moordyn_config: dict | None = None
 
 
 class TurbineModelResponse(BaseModel):
@@ -288,6 +294,9 @@ class TurbineModelResponse(BaseModel):
     precone: float | None = None
     rotor_speed_rated: float | None = None
     dof_flags: dict | None = None
+    substructure_config: dict | None = None
+    hydrodyn_config: dict | None = None
+    moordyn_config: dict | None = None
     is_active: bool
     created_at: datetime
 

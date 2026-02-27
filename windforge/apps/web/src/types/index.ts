@@ -32,6 +32,21 @@ export interface RegisterRequest {
 export type WindClass = 'I' | 'II' | 'III' | 'S';
 export type TurbulenceClass = 'A' | 'B' | 'C';
 
+export type PlatformType = 'onshore' | 'monopile' | 'jacket' | 'spar' | 'semi_submersible' | 'tlp';
+
+export interface ReferenceTemplate {
+  id: string;
+  name: string;
+  description: string;
+  rated_power_kw: number;
+  rotor_diameter: number;
+  hub_height: number;
+  wind_class: string;
+  turbulence_class: string;
+  platform_type: string;
+  is_offshore: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -46,6 +61,8 @@ export interface Project {
   cut_out_speed: number;
   dt: number;
   t_max: number;
+  platform_type: PlatformType;
+  water_depth: number | null;
   status: string;
   org_id: string;
   created_by?: string;
@@ -66,6 +83,8 @@ export interface ProjectCreate {
   cut_out_speed?: number;
   dt?: number;
   t_max?: number;
+  platform_type?: PlatformType;
+  water_depth?: number;
 }
 
 // ─── Tower ───────────────────────────────────────────────────────────────────
@@ -228,6 +247,9 @@ export interface TurbineModel {
   precone: number | null;
   rotor_speed_rated: number | null;
   dof_flags: Record<string, boolean> | null;
+  substructure_config: Record<string, any> | null;
+  hydrodyn_config: Record<string, any> | null;
+  moordyn_config: Record<string, any> | null;
   is_active: boolean;
   created_at: string;
 }
@@ -250,6 +272,9 @@ export interface TurbineModelCreate {
   precone?: number;
   rotor_speed_rated?: number;
   dof_flags?: Record<string, boolean>;
+  substructure_config?: Record<string, any>;
+  hydrodyn_config?: Record<string, any>;
+  moordyn_config?: Record<string, any>;
 }
 
 // ─── DLC ─────────────────────────────────────────────────────────────────────
