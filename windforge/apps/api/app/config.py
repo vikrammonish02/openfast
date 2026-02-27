@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # --- OpenFAST ---
     OPENFAST_LIB_PATH: str = "/usr/local/lib/libopenfastlib.so"
     OPENFAST_WORK_DIR: str = "/tmp/windforge/work"
+    PROJECTS_DIR: str = "/tmp/windforge_projects"
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = [

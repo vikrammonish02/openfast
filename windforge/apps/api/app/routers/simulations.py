@@ -1,5 +1,6 @@
 """Simulation endpoints: CRUD, execution control, results retrieval."""
 
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.models.simulation import (
     SimulationStatus,
 )
 from app.models.user import User
+from app.services.simulation_service import run_file_generation
 from app.schemas.simulation import (
     DLCDefinitionCreate,
     DLCDefinitionResponse,
@@ -362,6 +364,10 @@ async def start_simulation(
     sim.started_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(sim)
+
+    # Kick off background file generation (runs in its own DB session)
+    asyncio.create_task(run_file_generation(sim.id, project_id))
+
     return _compute_progress(sim)
 
 

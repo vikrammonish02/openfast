@@ -119,24 +119,30 @@ class InflowWindGenerator:
 
         # --- Uniform Wind ---
         _a("-------  Parameters for Uniform wind file   [used only for WindType = 2] --------------------------------------")
-        _a(f'{"\"" + config.uniform_filename + "\"":<40s}   Filename_Uni    - Filename of time series data for uniform wind field.  (-)")
+        uni_fn = '"' + config.uniform_filename + '"'
+        _a(f"{uni_fn:<40s}   Filename_Uni    - Filename of time series data for uniform wind field.  (-)")
         _a(f"{config.ref_ht:<14.4f}   RefHt_Uni       - Reference height for horizontal wind speed (m)")
         _a(f"{config.ref_ht:<14.4f}   RefLength       - Reference length for linear horizontal and vertical shear (-)")
 
         # --- TurbSim FF ---
         _a("-------  Parameters for Binary TurbSim Full-Field files   [used only for WindType = 3] ------------------------")
-        _a(f'{"\"" + config.turbsim_filename + "\"":<40s}   FileName_BTS    - Name of the Full field wind file to use (.bts)')
+        bts_fn = '"' + config.turbsim_filename + '"'
+        _a(f"{bts_fn:<40s}   FileName_BTS    - Name of the Full field wind file to use (.bts)")
 
         # --- Bladed-style FF ---
         _a("-------  Parameters for Binary Bladed-style Full-Field files   [used only for WindType = 4] -------------------")
-        _a(f'{"\"" + config.bladed_filename + "\"":<40s}   FilenameRoot    - WindType=4: Rootname of the full-field wind file to use (.wnd, .sum)')
+        bladed_fn = '"' + config.bladed_filename + '"'
+        _a(f"{bladed_fn:<40s}   FilenameRoot    - WindType=4: Rootname of the full-field wind file to use (.wnd, .sum)")
         _a(f"{_f(config.tower_file):<14s}   TowerFile       - Have tower file (.twr) (flag)")
 
         # --- HAWC ---
         _a("-------  Parameters for HAWC-format binary files  [Only used with WindType = 5] --------------------------------")
-        _a(f'{"\"" + config.hawc_filename_u + "\"":<40s}   FileName_u      - name of the file containing the u-component fluctuating wind (.bin)')
-        _a(f'{"\"" + config.hawc_filename_v + "\"":<40s}   FileName_v      - name of the file containing the v-component fluctuating wind (.bin)')
-        _a(f'{"\"" + config.hawc_filename_w + "\"":<40s}   FileName_w      - name of the file containing the w-component fluctuating wind (.bin)')
+        hawc_u = '"' + config.hawc_filename_u + '"'
+        hawc_v = '"' + config.hawc_filename_v + '"'
+        hawc_w = '"' + config.hawc_filename_w + '"'
+        _a(f"{hawc_u:<40s}   FileName_u      - name of the file containing the u-component fluctuating wind (.bin)")
+        _a(f"{hawc_v:<40s}   FileName_v      - name of the file containing the v-component fluctuating wind (.bin)")
+        _a(f"{hawc_w:<40s}   FileName_w      - name of the file containing the w-component fluctuating wind (.bin)")
         _a(f"{config.hawc_nx:<14d}   nx              - number of grids in the x direction (in the 3 files above) (-)")
         _a(f"{config.hawc_ny:<14d}   ny              - number of grids in the y direction (in the 3 files above) (-)")
         _a(f"{config.hawc_nz:<14d}   nz              - number of grids in the z direction (in the 3 files above) (-)")

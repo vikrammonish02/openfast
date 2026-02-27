@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, blades, controllers, projects, templates, towers, turbine_models, websocket
+from app.routers import auth, blades, controllers, files, projects, templates, towers, turbine_models, websocket
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -30,6 +30,10 @@ async def lifespan(app: FastAPI):
     work_dir = Path(settings.OPENFAST_WORK_DIR)
     work_dir.mkdir(parents=True, exist_ok=True)
     logger.info("OpenFAST work directory: %s", work_dir)
+
+    projects_dir = Path(settings.PROJECTS_DIR)
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Projects directory: %s", projects_dir)
 
     yield
 
@@ -69,6 +73,7 @@ app.include_router(simulations_router, prefix="/api/v1")
 app.include_router(dlc_router, prefix="/api/v1")
 app.include_router(websocket.router)
 app.include_router(templates.router, prefix="/api/v1")
+app.include_router(files.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

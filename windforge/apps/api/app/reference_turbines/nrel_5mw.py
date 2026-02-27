@@ -423,6 +423,8 @@ NREL_5MW: dict = {
     "controller": {
         "name": "NREL 5MW Baseline Controller",
         "type": "baseline",
+        "dll_filename": "libdiscon.so",
+        "dll_procname": "DISCON",
         "pcmode": 0,
         "vscontrl": 1,
         "parameters": {

@@ -117,6 +117,8 @@ async def create_project_from_template(
         project_id=project.id,
         name=tpl_controller["name"],
         controller_type=tpl_controller["type"],
+        dll_filename=tpl_controller.get("dll_filename"),
+        dll_procname=tpl_controller.get("dll_procname"),
         pcmode=tpl_controller["pcmode"],
         vscontrl=tpl_controller["vscontrl"],
         parameters=tpl_controller["parameters"],

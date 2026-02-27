@@ -330,24 +330,32 @@ class ServoDynGenerator:
         _a("---------------------- STRUCTURAL CONTROL ------------------------------------------")
         _a(f"{config.num_b_stc:<14d}   NumBStC      - Number of blade structural controllers (integer)")
         if config.b_stc_files:
-            _a(f'{"  ".join(f\'"{f}\'' for f in config.b_stc_files):<40s}   BStCfiles    - Name of the files for blade structural controllers (quoted strings) [unused when NumBStC==0]')
+            b_stc_str = "  ".join('"' + f + '"' for f in config.b_stc_files)
+            _a(f"{b_stc_str:<40s}   BStCfiles    - Name of the files for blade structural controllers (quoted strings) [unused when NumBStC==0]")
         else:
-            _a(f'{"\"unused\"":<40s}   BStCfiles    - Name of the files for blade structural controllers (quoted strings) [unused when NumBStC==0]')
+            unused = '"unused"'
+            _a(f"{unused:<40s}   BStCfiles    - Name of the files for blade structural controllers (quoted strings) [unused when NumBStC==0]")
         _a(f"{config.num_n_stc:<14d}   NumNStC      - Number of nacelle structural controllers (integer)")
         if config.n_stc_files:
-            _a(f'{"  ".join(f\'"{f}\'' for f in config.n_stc_files):<40s}   NStCfiles    - Name of the files for nacelle structural controllers (quoted strings) [unused when NumNStC==0]')
+            n_stc_str = "  ".join('"' + f + '"' for f in config.n_stc_files)
+            _a(f"{n_stc_str:<40s}   NStCfiles    - Name of the files for nacelle structural controllers (quoted strings) [unused when NumNStC==0]")
         else:
-            _a(f'{"\"unused\"":<40s}   NStCfiles    - Name of the files for nacelle structural controllers (quoted strings) [unused when NumNStC==0]')
+            unused = '"unused"'
+            _a(f"{unused:<40s}   NStCfiles    - Name of the files for nacelle structural controllers (quoted strings) [unused when NumNStC==0]")
         _a(f"{config.num_t_stc:<14d}   NumTStC      - Number of tower structural controllers (integer)")
         if config.t_stc_files:
-            _a(f'{"  ".join(f\'"{f}\'' for f in config.t_stc_files):<40s}   TStCfiles    - Name of the files for tower structural controllers (quoted strings) [unused when NumTStC==0]')
+            t_stc_str = "  ".join('"' + f + '"' for f in config.t_stc_files)
+            _a(f"{t_stc_str:<40s}   TStCfiles    - Name of the files for tower structural controllers (quoted strings) [unused when NumTStC==0]")
         else:
-            _a(f'{"\"unused\"":<40s}   TStCfiles    - Name of the files for tower structural controllers (quoted strings) [unused when NumTStC==0]')
+            unused = '"unused"'
+            _a(f"{unused:<40s}   TStCfiles    - Name of the files for tower structural controllers (quoted strings) [unused when NumTStC==0]")
         _a(f"{config.num_s_stc:<14d}   NumSStC      - Number of substructure structural controllers (integer)")
         if config.s_stc_files:
-            _a(f'{"  ".join(f\'"{f}\'' for f in config.s_stc_files):<40s}   SStCfiles    - Name of the files for substructure structural controllers (quoted strings) [unused when NumSStC==0]')
+            s_stc_str = "  ".join('"' + f + '"' for f in config.s_stc_files)
+            _a(f"{s_stc_str:<40s}   SStCfiles    - Name of the files for substructure structural controllers (quoted strings) [unused when NumSStC==0]")
         else:
-            _a(f'{"\"unused\"":<40s}   SStCfiles    - Name of the files for substructure structural controllers (quoted strings) [unused when NumSStC==0]')
+            unused = '"unused"'
+            _a(f"{unused:<40s}   SStCfiles    - Name of the files for substructure structural controllers (quoted strings) [unused when NumSStC==0]")
 
         # --- Bladed Interface ---
         _a("---------------------- BLADED INTERFACE ---------------------------------------- [used with PCMode=5, VSContrl=5, or YCMode=5]")

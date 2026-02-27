@@ -21,6 +21,7 @@ import type {
   ResultsDEL,
   ResultsExtreme,
   ReferenceTemplate,
+  FileNode,
 } from '@/types';
 
 export type { SimulationCase } from '@/types';
@@ -488,6 +489,25 @@ export const simulationsApi = {
       dels: dels.data,
       extremes: extremes.data,
     };
+  },
+};
+
+// ─── Files API ──────────────────────────────────────────────────────────────
+
+export const filesApi = {
+  async listFiles(projectId: string): Promise<FileNode[]> {
+    const res = await api.get<FileNode[]>(`/projects/${projectId}/files`);
+    return res.data;
+  },
+  async getFileContent(projectId: string, filePath: string): Promise<string> {
+    const res = await api.get(`/projects/${projectId}/files/content/${filePath}`, {
+      responseType: 'text',
+      transformResponse: [(data: string) => data],
+    });
+    return res.data;
+  },
+  getDownloadUrl(projectId: string, filePath: string): string {
+    return `${api.defaults.baseURL}/projects/${projectId}/files/download/${filePath}`;
   },
 };
 

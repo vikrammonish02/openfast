@@ -364,6 +364,8 @@ DTU_10MW: dict = {
     "controller": {
         "name": "DTU 10MW Baseline Controller",
         "type": "baseline",
+        "dll_filename": "libdiscon.so",
+        "dll_procname": "DISCON",
         "pcmode": 0,
         "vscontrl": 1,
         "parameters": {

@@ -10,6 +10,7 @@ import {
   Table2,
   Play,
   BarChart3,
+  FolderOpen,
   ChevronRight,
 } from 'lucide-react';
 
@@ -21,6 +22,7 @@ const tabs = [
   { path: 'dlc', label: 'DLC', icon: Table2 },
   { path: 'simulate', label: 'Simulate', icon: Play },
   { path: 'results', label: 'Results', icon: BarChart3 },
+  { path: 'files', label: 'Files', icon: FolderOpen },
 ];
 
 export default function ProjectLayout() {

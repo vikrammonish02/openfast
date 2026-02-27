@@ -433,3 +433,14 @@ export type WSMessage =
   | WSCaseError
   | WSSimulationComplete
   | WSLiveData;
+
+// ---------------------------------------------------------------------------
+// File Browser
+// ---------------------------------------------------------------------------
+export interface FileNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  children?: FileNode[];
+}

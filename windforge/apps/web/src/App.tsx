@@ -16,6 +16,7 @@ import TurbineAssembly from '@/routes/project/TurbineAssembly';
 import DLCMatrix from '@/routes/project/DLCMatrix';
 import SimulationRunner from '@/routes/project/SimulationRunner';
 import ResultsDashboard from '@/routes/project/ResultsDashboard';
+import FileBrowser from '@/routes/project/FileBrowser';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
@@ -46,6 +47,7 @@ function App() {
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />
+          <Route path="files" element={<FileBrowser />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

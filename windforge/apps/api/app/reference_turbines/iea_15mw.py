@@ -467,6 +467,8 @@ IEA_15MW: dict = {
     "controller": {
         "name": "IEA 15MW ROSCO Controller",
         "type": "rosco",
+        "dll_filename": "librosco.so",
+        "dll_procname": "DISCON",
         "pcmode": 5,
         "vscontrl": 5,
         "parameters": {
