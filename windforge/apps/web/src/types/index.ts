@@ -4,8 +4,9 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
+  org_id: string;
   organization_name?: string;
-  is_active: boolean;
+  role: string;
   created_at: string;
 }
 
@@ -37,16 +38,17 @@ export interface Project {
   description?: string;
   wind_class: WindClass;
   turbulence_class: TurbulenceClass;
-  rated_power_kw: number;
-  rotor_diameter_m: number;
-  hub_height_m: number;
+  rated_power: number;
+  rotor_diameter: number;
+  hub_height: number;
   cut_in_speed: number;
   rated_speed: number;
   cut_out_speed: number;
   dt: number;
   t_max: number;
   status: string;
-  owner_id: string;
+  org_id: string;
+  created_by?: string;
   created_at: string;
   updated_at: string;
 }
@@ -54,16 +56,16 @@ export interface Project {
 export interface ProjectCreate {
   name: string;
   description?: string;
-  wind_class: WindClass;
-  turbulence_class: TurbulenceClass;
-  rated_power_kw: number;
-  rotor_diameter_m: number;
-  hub_height_m: number;
-  cut_in_speed: number;
-  rated_speed: number;
-  cut_out_speed: number;
-  dt: number;
-  t_max: number;
+  wind_class?: WindClass;
+  turbulence_class?: TurbulenceClass;
+  rated_power?: number;
+  rotor_diameter?: number;
+  hub_height?: number;
+  cut_in_speed?: number;
+  rated_speed?: number;
+  cut_out_speed?: number;
+  dt?: number;
+  t_max?: number;
 }
 
 // ─── Tower ───────────────────────────────────────────────────────────────────

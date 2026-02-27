@@ -101,7 +101,7 @@ export default function MainLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-surface-light-secondary">
+      <main className="flex-1 overflow-auto bg-surface-dark">
         <Outlet />
       </main>
     </div>

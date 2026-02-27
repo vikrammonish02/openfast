@@ -22,9 +22,9 @@ const defaultFormData: ProjectCreate = {
   description: '',
   wind_class: 'II',
   turbulence_class: 'B',
-  rated_power_kw: 5000,
-  rotor_diameter_m: 126,
-  hub_height_m: 90,
+  rated_power: 5000,
+  rotor_diameter: 126,
+  hub_height: 90,
   cut_in_speed: 3,
   rated_speed: 11.4,
   cut_out_speed: 25,
@@ -76,8 +76,8 @@ export default function Dashboard() {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Your Projects</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-slate-100">Your Projects</h1>
+          <p className="mt-1 text-sm text-slate-400">
             Manage and design your wind turbine configurations
           </p>
         </div>
@@ -96,14 +96,14 @@ export default function Dashboard() {
 
       {/* Empty state */}
       {!isLoading && projects.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-24">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-600 py-24">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-dark-tertiary">
             <FolderOpen className="h-8 w-8 text-slate-400" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-700">
+          <h3 className="text-lg font-semibold text-slate-200">
             No projects yet
           </h3>
-          <p className="mt-1 text-sm text-slate-500 max-w-sm text-center">
+          <p className="mt-1 text-sm text-slate-400 max-w-sm text-center">
             Create your first wind turbine project to start designing towers,
             blades, and controllers.
           </p>
@@ -124,21 +124,21 @@ export default function Dashboard() {
             <button
               key={project.id}
               onClick={() => navigate(`/projects/${project.id}/tower`)}
-              className="group rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-all duration-200 hover:border-accent-300 hover:shadow-md hover:shadow-accent-500/5"
+              className="group rounded-xl border border-slate-700 bg-surface-dark-secondary p-6 text-left shadow-sm transition-all duration-200 hover:border-accent-500/50 hover:shadow-md hover:shadow-accent-500/5"
             >
               {/* Project header */}
               <div className="mb-4 flex items-start justify-between">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-50 transition-colors group-hover:bg-accent-100">
-                  <Wind className="h-5 w-5 text-accent-600" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-500/10 transition-colors group-hover:bg-accent-500/20">
+                  <Wind className="h-5 w-5 text-accent-400" />
                 </div>
                 <span
                   className={clsx(
                     'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
                     project.status === 'active'
-                      ? 'bg-success-50 text-success-700'
+                      ? 'bg-success-500/10 text-success-400'
                       : project.status === 'completed'
-                        ? 'bg-accent-50 text-accent-700'
-                        : 'bg-slate-100 text-slate-600',
+                        ? 'bg-accent-500/10 text-accent-400'
+                        : 'bg-slate-700 text-slate-300',
                   )}
                 >
                   {project.status || 'Draft'}
@@ -146,40 +146,40 @@ export default function Dashboard() {
               </div>
 
               {/* Name & description */}
-              <h3 className="text-base font-semibold text-slate-800 group-hover:text-accent-700 transition-colors">
+              <h3 className="text-base font-semibold text-slate-100 group-hover:text-accent-400 transition-colors">
                 {project.name}
               </h3>
               {project.description && (
-                <p className="mt-1 text-sm text-slate-500 line-clamp-2">
+                <p className="mt-1 text-sm text-slate-400 line-clamp-2">
                   {project.description}
                 </p>
               )}
 
               {/* Specs */}
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Wind className="h-3.5 w-3.5 text-slate-400" />
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Wind className="h-3.5 w-3.5 text-slate-500" />
                   <span>
                     Class {project.wind_class}
                     {project.turbulence_class}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Ruler className="h-3.5 w-3.5 text-slate-400" />
-                  <span>{project.rotor_diameter_m}m rotor</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Ruler className="h-3.5 w-3.5 text-slate-500" />
+                  <span>{project.rotor_diameter}m rotor</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Zap className="h-3.5 w-3.5 text-slate-400" />
-                  <span>{project.rated_power_kw} kW</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Zap className="h-3.5 w-3.5 text-slate-500" />
+                  <span>{project.rated_power} kW</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Ruler className="h-3.5 w-3.5 text-slate-400" />
-                  <span>{project.hub_height_m}m hub</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Ruler className="h-3.5 w-3.5 text-slate-500" />
+                  <span>{project.hub_height}m hub</span>
                 </div>
               </div>
 
               {/* Date */}
-              <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400 border-t border-slate-100 pt-3">
+              <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-500 border-t border-slate-700 pt-3">
                 <Calendar className="h-3.5 w-3.5" />
                 <span>
                   Created{' '}
@@ -323,9 +323,9 @@ export default function Dashboard() {
                     <input
                       id="rated-power"
                       type="number"
-                      value={formData.rated_power_kw}
+                      value={formData.rated_power}
                       onChange={(e) =>
-                        updateForm('rated_power_kw', Number(e.target.value))
+                        updateForm('rated_power', Number(e.target.value))
                       }
                       className="input-field"
                       min={0}
@@ -341,9 +341,9 @@ export default function Dashboard() {
                     <input
                       id="rotor-diam"
                       type="number"
-                      value={formData.rotor_diameter_m}
+                      value={formData.rotor_diameter}
                       onChange={(e) =>
-                        updateForm('rotor_diameter_m', Number(e.target.value))
+                        updateForm('rotor_diameter', Number(e.target.value))
                       }
                       className="input-field"
                       min={0}
@@ -359,9 +359,9 @@ export default function Dashboard() {
                     <input
                       id="hub-height"
                       type="number"
-                      value={formData.hub_height_m}
+                      value={formData.hub_height}
                       onChange={(e) =>
-                        updateForm('hub_height_m', Number(e.target.value))
+                        updateForm('hub_height', Number(e.target.value))
                       }
                       className="input-field"
                       min={0}

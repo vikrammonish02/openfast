@@ -37,36 +37,36 @@ export default function ProjectLayout() {
   return (
     <div className="flex h-full flex-col">
       {/* Project header */}
-      <div className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
-          <NavLink to="/" className="hover:text-accent-600 transition-colors">
+      <div className="border-b border-slate-700 bg-surface-dark-secondary px-6 py-4">
+        <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
+          <NavLink to="/" className="hover:text-accent-400 transition-colors">
             Projects
           </NavLink>
           <ChevronRight className="h-3.5 w-3.5" />
-          <span className="text-slate-800 font-medium">
+          <span className="text-slate-100 font-medium">
             {currentProject?.name || 'Loading...'}
           </span>
         </div>
         {currentProject && (
-          <div className="flex items-center gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-4 text-xs text-slate-500">
             <span>
               Wind Class {currentProject.wind_class}
               {currentProject.turbulence_class}
             </span>
-            <span className="inline-block w-1 h-1 rounded-full bg-slate-300" />
+            <span className="inline-block w-1 h-1 rounded-full bg-slate-600" />
             <span>
-              {currentProject.rotor_diameter_m}m rotor
+              {currentProject.rotor_diameter}m rotor
             </span>
-            <span className="inline-block w-1 h-1 rounded-full bg-slate-300" />
+            <span className="inline-block w-1 h-1 rounded-full bg-slate-600" />
             <span>
-              {currentProject.rated_power_kw} kW rated
+              {currentProject.rated_power} kW rated
             </span>
           </div>
         )}
       </div>
 
       {/* Horizontal tab navigation */}
-      <div className="border-b border-slate-200 bg-white px-6">
+      <div className="border-b border-slate-700 bg-surface-dark-secondary px-6">
         <nav className="flex gap-1 -mb-px">
           {tabs.map((tab) => (
             <NavLink
@@ -76,8 +76,8 @@ export default function ProjectLayout() {
                 clsx(
                   'group flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-all duration-200',
                   isActive
-                    ? 'border-accent-500 text-accent-600'
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700',
+                    ? 'border-accent-500 text-accent-400'
+                    : 'border-transparent text-slate-400 hover:border-slate-500 hover:text-slate-200',
                 )
               }
             >
