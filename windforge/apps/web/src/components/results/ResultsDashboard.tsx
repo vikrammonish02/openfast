@@ -63,13 +63,14 @@ interface Simulation {
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabKey = 'statistics' | 'del' | 'extreme' | 'envelopes' | 'report';
+type TabKey = 'statistics' | 'del' | 'extreme' | 'envelopes' | 'timeseries' | 'report';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'statistics', label: 'Statistics', icon: <BarChart3 size={14} /> },
   { key: 'del', label: 'DEL', icon: <TrendingUp size={14} /> },
   { key: 'extreme', label: 'Extreme Loads', icon: <AlertTriangle size={14} /> },
   { key: 'envelopes', label: 'Load Envelopes', icon: <Layers size={14} /> },
+  { key: 'timeseries', label: 'Time Series', icon: <TrendingUp size={14} /> },
   { key: 'report', label: 'Report', icon: <FileText size={14} /> },
 ];
 
@@ -149,6 +150,14 @@ export default function ResultsDashboard() {
   const [envelopeXChannel, setEnvelopeXChannel] = useState('TwrBsMxt');
   const [envelopeYChannel, setEnvelopeYChannel] = useState('TwrBsMyt');
 
+  // Time series
+  const [tsCase, setTsCase] = useState<string>('');
+  const [tsCases, setTsCases] = useState<{id: string; label: string}[]>([]);
+  const [tsChannels, setTsChannels] = useState<string[]>([]);
+  const [tsSelectedChannels, setTsSelectedChannels] = useState<string[]>(['GenPwr', 'RotSpeed', 'BldPitch1', 'TwrBsMxt']);
+  const [tsData, setTsData] = useState<any>(null);
+  const [tsLoading, setTsLoading] = useState(false);
+
   // ---- Fetch simulations ----
   useEffect(() => {
     if (!projectId) return;
@@ -183,6 +192,60 @@ export default function ResultsDashboard() {
       .then((res) => setExtremeResults(res.data as ResultsExtreme))
       .catch(() => setExtremeResults(null));
   }, [projectId, selectedSimId]);
+
+  // ---- Fetch cases for time series ----
+  useEffect(() => {
+    if (!projectId || !selectedSimId) return;
+    apiClient
+      .get(`/projects/${projectId}/simulations/${selectedSimId}/cases`)
+      .then((res) => {
+        const cases = (res.data as any[])
+          .filter((c: any) => c.status === 'completed')
+          .map((c: any) => ({ id: c.id, label: c.name || c.id }));
+        setTsCases(cases);
+        if (cases.length > 0) setTsCase(cases[0].id);
+        else setTsCase('');
+      })
+      .catch(() => {
+        setTsCases([]);
+        setTsCase('');
+      });
+  }, [projectId, selectedSimId]);
+
+  // ---- Fetch channels for selected case ----
+  useEffect(() => {
+    if (!projectId || !selectedSimId || !tsCase) {
+      setTsChannels([]);
+      return;
+    }
+    apiClient
+      .get(`/projects/${projectId}/simulations/${selectedSimId}/cases/${tsCase}/channels`)
+      .then((res) => {
+        const channelsData = res.data?.channels ?? res.data;
+        const names: string[] = Array.isArray(channelsData)
+          ? channelsData.map((c: any) => (typeof c === 'string' ? c : c.name))
+          : [];
+        setTsChannels(names.sort());
+      })
+      .catch(() => setTsChannels([]));
+  }, [projectId, selectedSimId, tsCase]);
+
+  // ---- Fetch time series data ----
+  useEffect(() => {
+    if (!projectId || !selectedSimId || !tsCase || tsSelectedChannels.length === 0) {
+      setTsData(null);
+      return;
+    }
+    setTsLoading(true);
+    const channelsParam = tsSelectedChannels.join(',');
+    apiClient
+      .get(
+        `/projects/${projectId}/simulations/${selectedSimId}/cases/${tsCase}/timeseries?channels=${channelsParam}&downsample=10`,
+      )
+      .then((res) => setTsData(res.data))
+      .catch(() => setTsData(null))
+      .finally(() => setTsLoading(false));
+  }, [projectId, selectedSimId, tsCase, tsSelectedChannels]);
 
   // ---- All channels from statistics ----
   const allChannels = useMemo(() => {
@@ -432,6 +495,19 @@ export default function ResultsDashboard() {
             onChangeXChannel={setEnvelopeXChannel}
             onChangeYChannel={setEnvelopeYChannel}
             traces={envelopeTraces}
+          />
+        )}
+
+        {activeTab === 'timeseries' && (
+          <TimeSeriesTab
+            cases={tsCases}
+            selectedCase={tsCase}
+            onSelectCase={setTsCase}
+            channels={tsChannels}
+            selectedChannels={tsSelectedChannels}
+            onSelectChannels={setTsSelectedChannels}
+            data={tsData}
+            loading={tsLoading}
           />
         )}
 
@@ -947,6 +1023,180 @@ function EnvelopesTab({
           style={{ width: '100%' }}
         />
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Time Series Tab
+// ---------------------------------------------------------------------------
+
+const TS_LINE_COLORS = [
+  '#00b4d8', '#ef4444', '#22c55e', '#f59e0b', '#a855f7',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+];
+
+function TimeSeriesTab({
+  cases,
+  selectedCase,
+  onSelectCase,
+  channels,
+  selectedChannels,
+  onSelectChannels,
+  data,
+  loading,
+}: {
+  cases: { id: string; label: string }[];
+  selectedCase: string;
+  onSelectCase: (id: string) => void;
+  channels: string[];
+  selectedChannels: string[];
+  onSelectChannels: (chs: string[]) => void;
+  data: any;
+  loading: boolean;
+}) {
+  const toggleChannel = (ch: string) => {
+    if (selectedChannels.includes(ch)) {
+      onSelectChannels(selectedChannels.filter((c) => c !== ch));
+    } else {
+      onSelectChannels([...selectedChannels, ch]);
+    }
+  };
+
+  // Build Plotly traces from time series data
+  const traces = useMemo(() => {
+    if (!data || !data.time || !data.channels) return [];
+    return selectedChannels
+      .filter((ch) => data.channels[ch])
+      .map((ch, i) => ({
+        x: data.time,
+        y: data.channels[ch].values,
+        type: 'scattergl' as const,
+        mode: 'lines' as const,
+        name: `${ch} (${data.channels[ch].unit})`,
+        line: { color: TS_LINE_COLORS[i % TS_LINE_COLORS.length], width: 1.5 },
+      }));
+  }, [data, selectedChannels]);
+
+  const displayChannels = channels.length > 0 ? channels : COMMON_CHANNELS;
+
+  return (
+    <div className="space-y-4">
+      {/* Case selector */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-slate-300">Case:</label>
+          <select
+            value={selectedCase}
+            onChange={(e) => onSelectCase(e.target.value)}
+            className="input-field max-w-xs"
+          >
+            {cases.length === 0 && (
+              <option value="">No completed cases</option>
+            )}
+            {cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Channel multi-select */}
+      <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Channels
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {displayChannels.map((ch) => {
+            const isSelected = selectedChannels.includes(ch);
+            const colorIdx = selectedChannels.indexOf(ch);
+            return (
+              <button
+                key={ch}
+                onClick={() => toggleChannel(ch)}
+                className={clsx(
+                  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
+                  isSelected
+                    ? 'bg-accent-500/20 text-accent-300 ring-accent-500/40'
+                    : 'bg-surface-dark text-slate-400 ring-slate-700 hover:ring-slate-600',
+                )}
+              >
+                {isSelected && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor:
+                        TS_LINE_COLORS[colorIdx % TS_LINE_COLORS.length],
+                    }}
+                  />
+                )}
+                {ch}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin h-6 w-6 rounded-full border-2 border-accent-500 border-t-transparent" />
+          <span className="ml-3 text-sm text-slate-400">Loading time series...</span>
+        </div>
+      )}
+
+      {/* Plot */}
+      {!loading && traces.length > 0 && (
+        <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-2">
+          <Plot
+            data={traces}
+            layout={{
+              autosize: true,
+              height: 500,
+              margin: { l: 60, r: 20, t: 30, b: 50 },
+              paper_bgcolor: 'rgba(0,0,0,0)',
+              plot_bgcolor: 'rgba(15,23,42,0.8)',
+              font: { color: '#94a3b8', size: 11 },
+              title: {
+                text: 'Time Series',
+                font: { size: 13, color: '#e2e8f0' },
+              },
+              xaxis: {
+                title: { text: 'Time (s)', font: { size: 11 } },
+                gridcolor: 'rgba(51,65,85,0.4)',
+              },
+              yaxis: {
+                gridcolor: 'rgba(51,65,85,0.4)',
+              },
+              legend: {
+                bgcolor: 'rgba(30,41,59,0.8)',
+                bordercolor: 'rgba(51,65,85,0.5)',
+                borderwidth: 1,
+                font: { size: 10 },
+              },
+              showlegend: true,
+            }}
+            config={{ displayModeBar: false, responsive: true }}
+            style={{ width: '100%' }}
+          />
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && traces.length === 0 && selectedCase && (
+        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-600 bg-surface-dark">
+          <div className="text-center text-slate-500">
+            <TrendingUp size={32} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">
+              {selectedChannels.length === 0
+                ? 'Select at least one channel to display'
+                : 'No time series data available for this case'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ import ControllerDesigner from '@/routes/project/ControllerDesigner';
 import TurbineAssembly from '@/routes/project/TurbineAssembly';
 import DLCMatrix from '@/routes/project/DLCMatrix';
 import SimulationRunner from '@/routes/project/SimulationRunner';
-import ResultsDashboard from '@/routes/project/ResultsDashboard';
+import ResultsDashboard from '@/components/results/ResultsDashboard';
 import FileBrowser from '@/routes/project/FileBrowser';
 
 function App() {

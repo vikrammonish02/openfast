@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     OPENFAST_LIB_PATH: str = "/usr/local/lib/libopenfastlib.so"
     OPENFAST_WORK_DIR: str = "/tmp/windforge/work"
     PROJECTS_DIR: str = "/tmp/windforge_projects"
+    TURBSIM_EXE: str = "turbsim"
+    OPENFAST_EXE: str = "openfast"
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = [

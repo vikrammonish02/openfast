@@ -1,12 +1,22 @@
-"""Background service for OpenFAST input file generation."""
+"""Background service for OpenFAST simulation pipeline.
+
+Four phases per case:
+  1. Generate input files (.fst, .dat, .inp)
+  2. Run TurbSim to produce .bts wind field
+  3. Run OpenFAST to produce .out time-series
+  4. Parse .out and persist results to DB
+"""
 
 import asyncio
 import logging
+import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +26,8 @@ from app.models.components import Tower, Blade, Controller, TurbineModel as Turb
 from app.models.project import Project as ProjectORM
 from app.models.simulation import (
     CaseStatus,
+    ResultsExtreme,
+    ResultsStatistics,
     Simulation,
     SimulationCase,
     SimulationStatus,
@@ -26,6 +38,7 @@ from app.openfast.file_generator import (
     SimulationCase as SimulationCaseDC,
     Project as ProjectDC,
 )
+from app.openfast.output_reader import OutputReader
 from app.openfast.servodyn_generator import ServoDynConfig, DISCONConfig
 from app.openfast.elastodyn_generator import (
     ElastoDynBladeConfig,
@@ -39,11 +52,157 @@ from app.routers.websocket import publish_event
 logger = logging.getLogger("windforge.simulation_service")
 
 
-async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
-    """Background task: generate OpenFAST input files for all cases in a simulation.
+# ---------------------------------------------------------------------------
+# Binary availability check
+# ---------------------------------------------------------------------------
 
-    This runs as an asyncio task kicked off by start_simulation().
-    It uses its own DB session (not the request session).
+def _check_binaries() -> dict[str, bool]:
+    """Check whether TurbSim and OpenFAST binaries are on PATH."""
+    return {
+        "turbsim": shutil.which(settings.TURBSIM_EXE) is not None,
+        "openfast": shutil.which(settings.OPENFAST_EXE) is not None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Subprocess runners (sync — called via run_in_executor)
+# ---------------------------------------------------------------------------
+
+def _run_turbsim_sync(inp_file: str, turbsim_exe: str) -> Path | None:
+    """Run TurbSim as a subprocess. Returns path to .bts or None."""
+    inp_path = Path(inp_file)
+    proc = subprocess.run(
+        [turbsim_exe, str(inp_path)],
+        cwd=str(inp_path.parent),
+        capture_output=True,
+        text=True,
+        timeout=1800,  # 30-minute timeout per case
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"TurbSim failed (exit {proc.returncode}): "
+            f"{proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]}"
+        )
+    # Look for the .bts output file
+    bts_file = inp_path.with_suffix(".bts")
+    if bts_file.is_file():
+        return bts_file
+    # Search for any .bts in the directory
+    bts_files = list(inp_path.parent.glob("*.bts"))
+    return max(bts_files, key=lambda p: p.stat().st_mtime) if bts_files else None
+
+
+def _run_openfast_sync(fst_file: str, openfast_exe: str) -> Path | None:
+    """Run OpenFAST as a subprocess. Returns path to .out/.outb or None."""
+    fst_path = Path(fst_file)
+    proc = subprocess.run(
+        [openfast_exe, str(fst_path)],
+        cwd=str(fst_path.parent),
+        capture_output=True,
+        text=True,
+        timeout=3600,  # 1-hour timeout
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"OpenFAST failed (exit {proc.returncode}): "
+            f"{proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]}"
+        )
+    stem = fst_path.stem
+    for suffix in (".outb", ".out"):
+        candidate = fst_path.parent / (stem + suffix)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Results persistence helpers
+# ---------------------------------------------------------------------------
+
+async def _persist_case_results(
+    output_file: Path,
+    sim: Simulation,
+    case: SimulationCase,
+    db,
+) -> None:
+    """Parse .out file and create a ResultsStatistics record."""
+    reader = OutputReader()
+    output_data = reader.load(output_file)
+
+    channel_statistics: dict = {}
+    for idx, (name, unit) in enumerate(
+        zip(output_data.channel_names, output_data.channel_units)
+    ):
+        if name.upper() == "TIME":
+            continue
+        col = output_data.data[:, idx]
+        channel_statistics[name] = {
+            "min": float(np.nanmin(col)),
+            "max": float(np.nanmax(col)),
+            "mean": float(np.nanmean(col)),
+            "std": float(np.nanstd(col)),
+            "abs_max": float(np.nanmax(np.abs(col))),
+            "unit": unit,
+        }
+
+    stats = ResultsStatistics(
+        simulation_id=sim.id,
+        simulation_case_id=case.id,
+        dlc_number=case.dlc_number,
+        wind_speed=case.wind_speed,
+        channel_statistics=channel_statistics,
+    )
+    db.add(stats)
+    await db.flush()
+
+
+async def _persist_aggregated_results(sim: Simulation, db) -> None:
+    """Aggregate extreme loads across all cases and store."""
+    result = await db.execute(
+        select(ResultsStatistics).where(ResultsStatistics.simulation_id == sim.id)
+    )
+    all_stats = result.scalars().all()
+    if not all_stats:
+        return
+
+    extreme_loads: dict = {}
+    for stat in all_stats:
+        if not stat.channel_statistics:
+            continue
+        for channel, vals in stat.channel_statistics.items():
+            if channel not in extreme_loads:
+                extreme_loads[channel] = {
+                    "max": vals["max"],
+                    "min": vals["min"],
+                    "safety_factor": 1.35,
+                    "design_value": vals["max"] * 1.35,
+                }
+            else:
+                ex = extreme_loads[channel]
+                ex["max"] = max(ex["max"], vals["max"])
+                ex["min"] = min(ex["min"], vals["min"])
+                ex["design_value"] = ex["max"] * ex["safety_factor"]
+
+    if extreme_loads:
+        db.add(ResultsExtreme(simulation_id=sim.id, extreme_loads=extreme_loads))
+        await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline
+# ---------------------------------------------------------------------------
+
+# Keep backward compat alias
+async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
+    """Alias for run_simulation_pipeline (backward compat)."""
+    return await run_simulation_pipeline(simulation_id, project_id)
+
+
+async def run_simulation_pipeline(simulation_id: UUID, project_id: UUID) -> None:
+    """Background task: generate files → run TurbSim → run OpenFAST → persist results.
+
+    Runs as an asyncio task kicked off by start_simulation().
+    Uses its own DB session (not the request session).
     """
     start_time = time.monotonic()
 
@@ -107,22 +266,32 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
             base_dir = Path(settings.PROJECTS_DIR) / str(project_id) / "simulations" / str(simulation_id) / "cases"
             base_dir.mkdir(parents=True, exist_ok=True)
 
+            # Check binary availability
+            binaries = _check_binaries()
+            can_execute = binaries["turbsim"] and binaries["openfast"]
+            logger.info(
+                "Binary check: turbsim=%s openfast=%s → execute=%s",
+                binaries["turbsim"], binaries["openfast"], can_execute,
+            )
+
             # 5. Generate files for each case
             generator = OpenFASTFileGenerator()
             total = len(sim.cases)
             completed = 0
             failed = 0
+            case_dirs: dict[str, tuple[SimulationCase, Path, str]] = {}  # case_id → (case, dir, fst_name)
 
             # Publish start event
             await publish_event(simulation_id, {
                 "type": "generation_started",
                 "total_cases": total,
+                "execute_mode": can_execute,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
+            # ── Phase 1: Generate input files ──────────────────────────
             for case in sim.cases:
                 try:
-                    # Build case directory name
                     case_dir_name = (
                         f"DLC{case.dlc_number.replace('.', '')}"
                         f"_v{case.wind_speed:05.1f}"
@@ -140,15 +309,13 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
                         yaw_misalignment=case.yaw_misalignment,
                         simulation_time=630.0,
                         dt=0.005,
-                        wind_type=3,  # TurbSim full-field
+                        wind_type=3,
                     )
 
-                    # Update case status
                     case.status = CaseStatus.RUNNING
                     case.started_at = datetime.now(timezone.utc)
                     await db.flush()
 
-                    # Publish progress
                     await publish_event(simulation_id, {
                         "type": "case_progress",
                         "case_id": str(case.id),
@@ -157,34 +324,29 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
                             f"Generating files for DLC {case.dlc_number} "
                             f"@ {case.wind_speed} m/s (seed {case.seed_number})"
                         ),
-                        "progress": int((completed / total) * 100),
+                        "progress": int((completed / max(total, 1)) * 100),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
 
-                    # Generate all input files
                     files = generator.generate_all(turbine_dc, case_dc, project_dc)
 
-                    # Write files to disk
                     file_list = []
+                    fst_name = None
                     for filename, content in files.items():
                         filepath = case_dir / filename
                         filepath.write_text(content, encoding="utf-8")
                         file_list.append(filename)
+                        if filename.endswith(".fst"):
+                            fst_name = filename
 
-                    # Update case status to completed
-                    case.status = CaseStatus.COMPLETED
-                    case.progress_percent = 100.0
-                    case.completed_at = datetime.now(timezone.utc)
-                    case.wall_time_seconds = (case.completed_at - case.started_at).total_seconds()
                     case.input_files = {"directory": str(case_dir), "files": file_list}
-                    completed += 1
-
+                    case_dirs[str(case.id)] = (case, case_dir, fst_name or f"{case_dir_name}.fst")
                     await db.flush()
 
-                    # Publish completion
                     await publish_event(simulation_id, {
                         "type": "case_complete",
                         "case_id": str(case.id),
+                        "phase": "file_generation",
                         "files_generated": file_list,
                         "directory": str(case_dir),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -205,8 +367,156 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
 
-                # Brief yield to allow WebSocket messages to be sent
                 await asyncio.sleep(0.01)
+
+            # If no binaries available, complete in generate-only mode
+            if not can_execute:
+                elapsed = time.monotonic() - start_time
+                # Mark file-generation-only cases as completed
+                for cid, (case, _, _) in case_dirs.items():
+                    case.status = CaseStatus.COMPLETED
+                    case.progress_percent = 100.0
+                    case.completed_at = datetime.now(timezone.utc)
+                    completed += 1
+                sim.completed_cases = completed
+                sim.failed_cases = failed
+                sim.status = SimulationStatus.COMPLETED
+                sim.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                await publish_event(simulation_id, {
+                    "type": "simulation_complete",
+                    "simulation_id": str(simulation_id),
+                    "mode": "generate_only",
+                    "completed": completed,
+                    "failed": failed,
+                    "total": total,
+                    "elapsed_seconds": round(elapsed, 2),
+                    "message": (
+                        "Input files generated. TurbSim/OpenFAST binaries not found "
+                        "on PATH — skipping execution. Install OpenFAST to run simulations."
+                    ),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                logger.info(
+                    "Simulation %s: generate-only mode (%d cases, %.1fs)",
+                    simulation_id, completed, elapsed,
+                )
+                return
+
+            # ── Phase 2 & 3: TurbSim + OpenFAST execution ─────────────
+            sim.status = SimulationStatus.GENERATING_WIND
+            await db.flush()
+            loop = asyncio.get_running_loop()
+
+            for cid, (case, case_dir, fst_name) in case_dirs.items():
+                if case.status == CaseStatus.FAILED:
+                    continue  # skip cases that failed file generation
+
+                try:
+                    # Phase 2: TurbSim
+                    turbsim_inp_files = list(case_dir.glob("*_TurbSim.inp")) + list(case_dir.glob("*TurbSim*.inp"))
+                    if turbsim_inp_files:
+                        inp_file = turbsim_inp_files[0]
+                        await publish_event(simulation_id, {
+                            "type": "case_progress",
+                            "case_id": cid,
+                            "status": "generating_wind",
+                            "message": f"Running TurbSim for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                        bts_path = await loop.run_in_executor(
+                            None, _run_turbsim_sync, str(inp_file), settings.TURBSIM_EXE
+                        )
+
+                        if bts_path:
+                            case.wind_field_path = str(bts_path)
+                            await publish_event(simulation_id, {
+                                "type": "case_progress",
+                                "case_id": cid,
+                                "status": "turbsim_complete",
+                                "message": f"TurbSim complete: {bts_path.name}",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+
+                    # Phase 3: OpenFAST
+                    sim.status = SimulationStatus.RUNNING
+                    case.status = CaseStatus.RUNNING
+                    await db.flush()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_progress",
+                        "case_id": cid,
+                        "status": "running_openfast",
+                        "message": f"Running OpenFAST for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                    out_path = await loop.run_in_executor(
+                        None, _run_openfast_sync, str(case_dir / fst_name), settings.OPENFAST_EXE
+                    )
+
+                    if out_path and out_path.is_file():
+                        # Phase 4: Parse results
+                        await publish_event(simulation_id, {
+                            "type": "case_progress",
+                            "case_id": cid,
+                            "status": "parsing_results",
+                            "message": f"Parsing results for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                        await _persist_case_results(out_path, sim, case, db)
+
+                        case.input_files = {
+                            **(case.input_files or {}),
+                            "output_file": str(out_path),
+                        }
+                        case.status = CaseStatus.COMPLETED
+                        case.progress_percent = 100.0
+                        case.completed_at = datetime.now(timezone.utc)
+                        case.wall_time_seconds = (case.completed_at - case.started_at).total_seconds()
+                        completed += 1
+                    else:
+                        case.status = CaseStatus.FAILED
+                        case.error_message = "OpenFAST produced no output file"
+                        case.completed_at = datetime.now(timezone.utc)
+                        failed += 1
+
+                    await db.flush()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_complete",
+                        "case_id": cid,
+                        "phase": "execution",
+                        "output_file": str(out_path) if out_path else None,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                except Exception as e:
+                    logger.exception("Execution failed for case %s", case.id)
+                    case.status = CaseStatus.FAILED
+                    case.error_message = str(e)
+                    case.completed_at = datetime.now(timezone.utc)
+                    failed += 1
+                    await db.flush()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_error",
+                        "case_id": cid,
+                        "error": str(e),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                await asyncio.sleep(0.01)
+
+            # ── Phase 5: Aggregate results ─────────────────────────────
+            if completed > 0:
+                try:
+                    await _persist_aggregated_results(sim, db)
+                except Exception as e:
+                    logger.warning("Failed to aggregate results: %s", e)
 
             # 6. Update simulation status
             elapsed = time.monotonic() - start_time
@@ -216,17 +526,15 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
 
             if failed == total:
                 sim.status = SimulationStatus.FAILED
-            elif failed > 0:
-                sim.status = SimulationStatus.COMPLETED  # partial success
             else:
                 sim.status = SimulationStatus.COMPLETED
 
             await db.commit()
 
-            # Publish final event
             await publish_event(simulation_id, {
                 "type": "simulation_complete",
                 "simulation_id": str(simulation_id),
+                "mode": "full_execution",
                 "completed": completed,
                 "failed": failed,
                 "total": total,
@@ -236,12 +544,12 @@ async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
             })
 
             logger.info(
-                "Simulation %s file generation complete: %d/%d cases in %.1fs",
+                "Simulation %s pipeline complete: %d/%d cases in %.1fs",
                 simulation_id, completed, total, elapsed,
             )
 
         except Exception as e:
-            logger.exception("Fatal error in file generation for simulation %s", simulation_id)
+            logger.exception("Fatal error in simulation pipeline for %s", simulation_id)
             try:
                 sim.status = SimulationStatus.FAILED
                 await db.commit()
@@ -326,9 +634,22 @@ def _build_turbine_model_dc(
             # AeroDyn AeroBladeStation fields: bl_spn, bl_crv_ac, bl_swp_ac, bl_crv_ang,
             #                                  bl_twist, bl_chord, bl_af_id
             # Blade aero station JSON keys: {frac, chord, aero_twist, airfoil_id, aero_center}
+            #
+            # airfoil_id in DB is a name string (e.g. "Cylinder1", "NACA64_A17").
+            # bl_af_id in the file generator is a 1-based integer index into the
+            # AFNames list. Build a unique ordered list and map names to indices.
+            unique_airfoils: list[str] = []
+            airfoil_index: dict[str, int] = {}
+            for s in blade.aero_stations:
+                af_name = s.get("airfoil_id", "Cylinder")
+                if af_name not in airfoil_index:
+                    unique_airfoils.append(af_name)
+                    airfoil_index[af_name] = len(unique_airfoils)  # 1-based
+
             aero_stations = []
             for s in blade.aero_stations:
                 frac = s.get("frac", s.get("fraction", 0))
+                af_name = s.get("airfoil_id", "Cylinder")
                 aero_stations.append(AeroBladeStation(
                     bl_spn=frac * blade.blade_length,
                     bl_crv_ac=0.0,
@@ -336,7 +657,7 @@ def _build_turbine_model_dc(
                     bl_crv_ang=0.0,
                     bl_twist=s.get("aero_twist", s.get("aero_twist_deg", 0)),
                     bl_chord=s.get("chord", s.get("chord_m", 0)),
-                    bl_af_id=s.get("bl_af_id", s.get("airfoil_id", 1)),
+                    bl_af_id=airfoil_index[af_name],
                 ))
             aerodyn_blade_config = AeroDynBladeConfig(
                 num_bl_nds=len(aero_stations),

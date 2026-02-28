@@ -164,6 +164,43 @@ export default function SimulationRunner() {
             }
             break;
 
+          // Multi-phase simulation events
+          case 'generate_only_mode':
+            addLog('warning', `Generate-only mode: ${msg.message}`);
+            break;
+
+          case 'turbsim_started':
+            addLog('info', `Running TurbSim for case ${msg.case_index ?? ''}...`);
+            break;
+
+          case 'turbsim_complete':
+            addLog('success', `TurbSim complete — wind field generated`);
+            break;
+
+          case 'turbsim_error':
+            addLog('error', `TurbSim failed: ${msg.error}`);
+            break;
+
+          case 'openfast_started':
+            addLog('info', `Running OpenFAST for case ${msg.case_index ?? ''}...`);
+            break;
+
+          case 'openfast_complete':
+            addLog('success', `OpenFAST complete — output generated`);
+            break;
+
+          case 'openfast_error':
+            addLog('error', `OpenFAST failed: ${msg.error}`);
+            break;
+
+          case 'parsing_results':
+            addLog('info', 'Parsing output files and computing statistics...');
+            break;
+
+          case 'results_persisted':
+            addLog('success', `Results saved for ${msg.cases_with_results ?? 0} cases`);
+            break;
+
           case 'simulation_complete':
             addLog(
               msg.failed > 0 ? 'warning' : 'success',
@@ -346,12 +383,12 @@ export default function SimulationRunner() {
     if (!projectId || !selectedSim) return;
     try {
       const updated = await simulationsApi.start(projectId, selectedSim.id);
-      toast.success('Simulation started — generating input files');
+      toast.success('Simulation started');
       setSelectedSim(updated);
       setSimulations((prev) =>
         prev.map((s) => (s.id === updated.id ? updated : s)),
       );
-      addLog('info', 'Simulation started — generating OpenFAST input files...');
+      addLog('info', 'Simulation started — generating files → TurbSim → OpenFAST...');
     } catch {
       toast.error('Failed to start simulation');
     }
@@ -455,7 +492,7 @@ export default function SimulationRunner() {
         <div>
           <h2 className="text-xl font-bold text-slate-100">Simulation Runner</h2>
           <p className="text-sm text-slate-400">
-            Generate OpenFAST input files and monitor simulation progress
+            Run TurbSim + OpenFAST simulations and monitor progress
           </p>
         </div>
         <button
@@ -612,7 +649,7 @@ export default function SimulationRunner() {
                         className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-accent-600 rounded-lg hover:bg-accent-700 transition-colors"
                       >
                         <Play className="h-4 w-4" />
-                        Generate Files
+                        Run Simulation
                       </button>
                     )}
                     {(selectedSim.status === 'running' || selectedSim.status === 'generating_wind') && (
@@ -700,11 +737,11 @@ export default function SimulationRunner() {
                     <CheckCircle2 className="h-5 w-5 text-success-400 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-medium text-success-300">
-                        File generation complete
+                        Simulation complete
                       </p>
                       <p className="text-xs text-success-400/70 mt-0.5">
-                        {selectedSim.completed_cases} case{selectedSim.completed_cases !== 1 ? 's' : ''} generated successfully.
-                        View the files in the Files tab.
+                        {selectedSim.completed_cases} case{selectedSim.completed_cases !== 1 ? 's' : ''} completed successfully.
+                        View results in the Results tab or files in the Files tab.
                       </p>
                     </div>
                   </div>
@@ -734,7 +771,7 @@ export default function SimulationRunner() {
                     </h4>
                     <span className="text-xs text-slate-400">
                       <FileText className="h-3.5 w-3.5 inline mr-1" />
-                      Each case generates a full set of OpenFAST input files
+                      Each case runs TurbSim → OpenFAST → results parsing
                     </span>
                   </div>
                   <div className="overflow-x-auto max-h-72 overflow-y-auto">

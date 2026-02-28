@@ -8,7 +8,9 @@ entry point for the file generation pipeline.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 from .fst_generator import FSTConfig, FSTGenerator
@@ -23,6 +25,7 @@ from .aerodyn_generator import (
     AeroDynBladeConfig,
     AeroDynGenerator,
 )
+from .airfoil_data import generate_nrel5mw_airfoil_files
 from .servodyn_generator import (
     ServoDynConfig,
     DISCONConfig,
@@ -229,6 +232,10 @@ class OpenFASTFileGenerator:
         ad_blade_config = turbine_model.aerodyn_blade_config or AeroDynBladeConfig()
         files[ad_blade_file] = self._ad_gen.generate_blade_file(ad_blade_config)
 
+        # Airfoil polar data files (in Airfoils/ subdirectory)
+        airfoil_files = generate_nrel5mw_airfoil_files()
+        files.update(airfoil_files)
+
         # ----------------------------------------------------------------
         # 3. ServoDyn files
         # ----------------------------------------------------------------
@@ -242,10 +249,13 @@ class OpenFASTFileGenerator:
             we_blade_radius=turbine_model.tip_radius,
             we_gear_ratio=turbine_model.gearbox_ratio,
             vs_rated_gen_pwr=turbine_model.rated_power_kw * 1000.0,
-            we_rated_pwr=turbine_model.rated_power_kw * 1000.0,
-            we_rated_v=turbine_model.rated_wind_speed,
         )
         files[discon_file] = self._srvd_gen.generate_discon_in(discon_cfg)
+
+        # Cp/Ct/Cq performance table required by ROSCO wind speed estimator
+        cp_ct_cq_file = self._get_cp_ct_cq_content(discon_cfg.perf_file_name)
+        if cp_ct_cq_file is not None:
+            files[discon_cfg.perf_file_name] = cp_ct_cq_file
 
         # ----------------------------------------------------------------
         # 4. InflowWind file
@@ -305,6 +315,7 @@ class OpenFASTFileGenerator:
             comp_inflow=1 if sim_case.wind_type > 0 else 0,
             comp_aero=2,
             comp_servo=1,
+            comp_sea_st=1 if is_offshore else 0,
             comp_hydro=1 if is_offshore else 0,
             comp_sub=1 if (is_offshore and not is_floating) else 0,
             comp_mooring=3 if is_floating else 0,
@@ -316,6 +327,7 @@ class OpenFASTFileGenerator:
             inflow_file=ifw_file,
             aero_file=ad_main_file,
             servo_file=srvd_file,
+            sea_st_file="unused",  # SeaState file (v4.x) — not yet generated
             hydro_file=hd_file if is_offshore else "",
             sub_file=sd_file if (is_offshore and not is_floating) else "",
             mooring_file=md_file if is_floating else "",
@@ -441,3 +453,29 @@ class OpenFASTFileGenerator:
             iec_wind_type="NTM",
             turb_model=TurbulenceModel.IECKAI,
         )
+
+    @staticmethod
+    def _get_cp_ct_cq_content(filename: str) -> Optional[str]:
+        """Read the Cp/Ct/Cq performance table file for ROSCO.
+
+        Searches known locations for the rotor performance table file.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the performance file (e.g. 'Cp_Ct_Cq.NREL5MW.txt').
+
+        Returns
+        -------
+        str or None
+            File content if found, None otherwise.
+        """
+        search_paths = [
+            Path("/Users/vikram/2026_aldott_website/server/rosco_full/Examples/Test_Cases/NREL-5MW"),
+            Path("/Users/vikram/2026_aldott_website/server/rosco_full/Examples/example_inputs"),
+        ]
+        for search_dir in search_paths:
+            filepath = search_dir / filename
+            if filepath.is_file():
+                return filepath.read_text()
+        return None

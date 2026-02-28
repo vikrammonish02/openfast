@@ -490,6 +490,33 @@ export const simulationsApi = {
       extremes: extremes.data,
     };
   },
+
+  getTimeSeries: async (
+    projectId: string,
+    simId: string,
+    caseId: string,
+    channels: string[] = [],
+    downsample: number = 1,
+  ) => {
+    const params = new URLSearchParams();
+    if (channels.length > 0) params.set('channels', channels.join(','));
+    if (downsample > 1) params.set('downsample', String(downsample));
+    const res = await api.get(
+      `/projects/${projectId}/simulations/${simId}/cases/${caseId}/timeseries?${params}`,
+    );
+    return res.data;
+  },
+
+  getChannels: async (
+    projectId: string,
+    simId: string,
+    caseId: string,
+  ) => {
+    const res = await api.get(
+      `/projects/${projectId}/simulations/${simId}/cases/${caseId}/channels`,
+    );
+    return res.data;
+  },
 };
 
 // ─── Files API ──────────────────────────────────────────────────────────────

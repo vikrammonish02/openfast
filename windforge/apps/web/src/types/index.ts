@@ -444,3 +444,24 @@ export interface FileNode {
   size: number;
   children?: FileNode[];
 }
+
+// ─── Time Series ────────────────────────────────────────────────────────────
+
+export interface TimeSeriesChannelData {
+  unit: string;
+  values: number[];
+}
+
+export interface TimeSeriesResponse {
+  case_id: string;
+  time: number[];
+  dt: number;
+  num_timesteps: number;
+  channels: Record<string, TimeSeriesChannelData>;
+  available_channels: string[];
+}
+
+export interface ChannelInfo {
+  name: string;
+  unit: string;
+}

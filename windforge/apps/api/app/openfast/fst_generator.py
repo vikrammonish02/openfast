@@ -2,18 +2,18 @@
 OpenFAST primary (.fst) input file generator.
 
 Generates the main .fst file matching the EXACT parse order from
-FAST_Subs.f90 subroutine FAST_ReadPrimaryFile (lines 2377-3200+).
+FAST_Subs.f90 subroutine FAST_ReadPrimaryFile.
 
-Parse order verified against OpenFAST v3.5.x source:
+Parse order verified against OpenFAST v4.1.2 (r-test reference):
   1. Header (2 lines)
   2. SIMULATION CONTROL: Echo, AbortLevel, TMax, DT, InterpOrder,
      NumCrctn, DT_UJac, UJacSclFact
   3. FEATURE SWITCHES: CompElast, CompInflow, CompAero, CompServo,
-     CompHydro, CompSub, CompMooring, CompIce, MHK
+     CompSeaSt, CompHydro, CompSub, CompMooring, CompIce, MHK
   4. ENVIRONMENTAL CONDITIONS: Gravity, AirDens, WtrDens, KinVisc,
      SpdSound, Patm, Pvap, WtrDpth, MSL2SWL
   5. INPUT FILES: EDFile, BDBldFile(1..3), InflowFile, AeroFile,
-     ServoFile, HydroFile, SubFile, MooringFile, IceFile
+     ServoFile, SeaStFile, HydroFile, SubFile, MooringFile, IceFile
   6. OUTPUT: SumPrint, SttsTime, ChkptTime, DT_Out, TStart,
      OutFileFmt, TabDelim, OutFmt
   7. LINEARIZATION: Linearize, CalcSteady, TrimCase, TrimTol,
@@ -47,6 +47,7 @@ class FSTConfig:
     comp_inflow: int = 1      # 0=still air, 1=InflowWind
     comp_aero: int = 2        # 0=None, 2=AeroDyn
     comp_servo: int = 1       # 0=None, 1=ServoDyn
+    comp_sea_st: int = 0      # 0=None, 1=SeaState  (added in v4.x)
     comp_hydro: int = 0       # 0=None, 1=HydroDyn
     comp_sub: int = 0         # 0=None, 1=SubDyn
     comp_mooring: int = 0     # 0=None, 1=MAP, 2=FEAM, 3=MoorDyn, 4=OrcaFlex
@@ -72,6 +73,7 @@ class FSTConfig:
     inflow_file: str = "NRELOffs662hrBl_InflowWind.dat"
     aero_file: str = "NRELOffs662hrBl_AeroDyn.dat"
     servo_file: str = "NRELOffs662hrBl_ServoDyn.dat"
+    sea_st_file: str = "unused"   # SeaState input file (v4.x)
     hydro_file: str = "unused"
     sub_file: str = "unused"
     mooring_file: str = "unused"
@@ -83,7 +85,7 @@ class FSTConfig:
     chkpt_time: float = 99999.0
     dt_out: str = "default"
     t_start: float = 0.0
-    out_file_fmt: int = 2     # 1=text, 2=binary, 3=both
+    out_file_fmt: int = 3     # 1=text, 2=binary, 3=both
     tab_delim: bool = True
     out_fmt: str = "ES10.3E2"
 
@@ -161,6 +163,7 @@ class FSTGenerator:
         _a(f"{config.comp_inflow:<14d}   CompInflow      - Compute inflow wind velocities (switch) {{0=still air; 1=InflowWind; 2=external from OpenFOAM}}")
         _a(f"{config.comp_aero:<14d}   CompAero        - Compute aerodynamic loads (switch) {{0=None; 1=AeroDyn14; 2=AeroDyn15}}")
         _a(f"{config.comp_servo:<14d}   CompServo       - Compute control and electrical-drive dynamics (switch) {{0=None; 1=ServoDyn}}")
+        _a(f"{config.comp_sea_st:<14d}   CompSeaSt       - Compute sea state information (switch) {{0=None; 1=SeaState}}")
         _a(f"{config.comp_hydro:<14d}   CompHydro       - Compute hydrodynamic loads (switch) {{0=None; 1=HydroDyn}}")
         _a(f"{config.comp_sub:<14d}   CompSub         - Compute sub-structural dynamics (switch) {{0=None; 1=SubDyn; 2=External Platform MCKF}}")
         _a(f"{config.comp_mooring:<14d}   CompMooring     - Compute mooring system (switch) {{0=None; 1=MAP++; 2=FEAMooring; 3=MoorDyn; 4=OrcaFlex}}")
@@ -192,6 +195,7 @@ class FSTGenerator:
         _a(f'{"\"" + config.inflow_file + "\"":<40s}   InflowFile      - Name of file containing inflow wind input parameters (-)')
         _a(f'{"\"" + config.aero_file + "\"":<40s}   AeroFile        - Name of file containing aerodynamic input parameters (-)')
         _a(f'{"\"" + config.servo_file + "\"":<40s}   ServoFile       - Name of file containing control and electrical-drive input parameters (-)')
+        _a(f'{"\"" + config.sea_st_file + "\"":<40s}   SeaStFile       - Name of file containing sea state input parameters (-)')
         _a(f'{"\"" + config.hydro_file + "\"":<40s}   HydroFile       - Name of file containing hydrodynamic input parameters (-)')
         _a(f'{"\"" + config.sub_file + "\"":<40s}   SubFile         - Name of file containing sub-structural input parameters (-)')
         _a(f'{"\"" + config.mooring_file + "\"":<40s}   MooringFile     - Name of file containing mooring system input parameters (-)')

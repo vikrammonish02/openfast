@@ -2,14 +2,18 @@
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.openfast.output_reader import OutputReader
 from app.models.project import Project
 from app.models.simulation import (
     CaseStatus,
@@ -22,7 +26,7 @@ from app.models.simulation import (
     SimulationStatus,
 )
 from app.models.user import User
-from app.services.simulation_service import run_file_generation
+from app.services.simulation_service import run_simulation_pipeline
 from app.schemas.simulation import (
     DLCDefinitionCreate,
     DLCDefinitionResponse,
@@ -366,7 +370,7 @@ async def start_simulation(
     await db.refresh(sim)
 
     # Kick off background file generation (runs in its own DB session)
-    asyncio.create_task(run_file_generation(sim.id, project_id))
+    asyncio.create_task(run_simulation_pipeline(sim.id, project_id))
 
     return _compute_progress(sim)
 
@@ -478,3 +482,191 @@ async def get_extreme_results(
         select(ResultsExtreme).where(ResultsExtreme.simulation_id == simulation_id)
     )
     return [ResultsExtremeResponse.model_validate(r) for r in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
+# Time series / channel endpoints
+# ---------------------------------------------------------------------------
+
+async def _get_case_output_path(
+    simulation_id: UUID,
+    case_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> tuple[SimulationCase, Path]:
+    """Look up a completed SimulationCase and resolve its output file path.
+
+    Returns the case object and the validated output file path.
+    Raises HTTPException on any failure.
+    """
+    result = await db.execute(
+        select(SimulationCase).where(
+            SimulationCase.id == case_id,
+            SimulationCase.simulation_id == simulation_id,
+        )
+    )
+    case = result.scalar_one_or_none()
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Simulation case not found"
+        )
+
+    if case.status != CaseStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Case is not completed (status: {case.status.value})",
+        )
+
+    # Try explicit output_file key first
+    output_path: Path | None = None
+    if case.input_files and "output_file" in case.input_files:
+        output_path = Path(case.input_files["output_file"])
+
+    # Fall back: search the case directory for .out / .outb files
+    if output_path is None or not output_path.is_file():
+        case_dir: Path | None = None
+        if case.input_files and "directory" in case.input_files:
+            case_dir = Path(case.input_files["directory"])
+        if case_dir is None or not case_dir.is_dir():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Case output directory not found",
+            )
+        candidates = list(case_dir.glob("*.outb")) + list(case_dir.glob("*.out"))
+        if not candidates:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No output file (.out/.outb) found for this case",
+            )
+        output_path = candidates[0]
+
+    # Security: ensure resolved path stays within PROJECTS_DIR
+    try:
+        resolved = output_path.resolve()
+        projects_resolved = Path(settings.PROJECTS_DIR).resolve()
+        if not str(resolved).startswith(str(projects_resolved)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+    except (OSError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid output path"
+        )
+
+    if not resolved.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Output file not found on disk",
+        )
+
+    return case, resolved
+
+
+@router.get("/{simulation_id}/cases/{case_id}/channels")
+async def get_case_channels(
+    project_id: UUID,
+    simulation_id: UUID,
+    case_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the list of available output channels for a completed case."""
+    await _verify_project(project_id, current_user.org_id, db)
+    await _get_simulation_or_404(simulation_id, project_id, db)
+    _case, output_path = await _get_case_output_path(
+        simulation_id, case_id, project_id, db
+    )
+
+    try:
+        reader = OutputReader()
+        output_data = reader.load(output_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read output file: {exc}",
+        )
+
+    channels = [
+        {"name": name, "unit": unit}
+        for name, unit in zip(output_data.channel_names, output_data.channel_units)
+    ]
+    return {"channels": channels}
+
+
+@router.get("/{simulation_id}/cases/{case_id}/timeseries")
+async def get_case_timeseries(
+    project_id: UUID,
+    simulation_id: UUID,
+    case_id: UUID,
+    channels: str = Query(
+        ..., description="Comma-separated list of channel names to retrieve"
+    ),
+    downsample: int = Query(
+        1, ge=1, description="Take every Nth sample (1 = no downsampling)"
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return time series data for selected output channels of a completed case."""
+    await _verify_project(project_id, current_user.org_id, db)
+    await _get_simulation_or_404(simulation_id, project_id, db)
+    case, output_path = await _get_case_output_path(
+        simulation_id, case_id, project_id, db
+    )
+
+    try:
+        reader = OutputReader()
+        output_data = reader.load(output_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read output file: {exc}",
+        )
+
+    requested = [ch.strip() for ch in channels.split(",") if ch.strip()]
+    if not requested:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No channels specified",
+        )
+
+    # Build a case-insensitive lookup for channel names -> index
+    name_to_idx: dict[str, int] = {
+        name.upper(): idx for idx, name in enumerate(output_data.channel_names)
+    }
+    unit_lookup: dict[str, str] = {
+        name.upper(): unit
+        for name, unit in zip(output_data.channel_names, output_data.channel_units)
+    }
+
+    # Validate all requested channels exist
+    missing = [ch for ch in requested if ch.upper() not in name_to_idx]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown channels: {', '.join(missing)}",
+        )
+
+    # Apply downsampling
+    time_arr = output_data.time[::downsample]
+    dt = output_data.dt * downsample
+
+    channels_payload: dict = {}
+    for ch in requested:
+        idx = name_to_idx[ch.upper()]
+        values = output_data.data[::downsample, idx]
+        # Find the original-cased name for the unit lookup
+        unit = unit_lookup[ch.upper()]
+        channels_payload[ch] = {
+            "unit": unit,
+            "values": np.where(np.isfinite(values), values, None).tolist(),
+        }
+
+    return {
+        "case_id": str(case_id),
+        "time": np.where(np.isfinite(time_arr), time_arr, None).tolist(),
+        "dt": dt,
+        "num_timesteps": len(time_arr),
+        "channels": channels_payload,
+        "available_channels": output_data.channel_names,
+    }
