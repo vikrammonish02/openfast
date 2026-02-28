@@ -668,7 +668,8 @@ def _build_turbine_model_dc(
     servodyn_config = None
     discon_config = None
     if controller:
-        dll_filename = controller.dll_filename or settings.ROSCO_LIB_PATH or "libdiscon.dylib"
+        # Resolve DLL path: prefer absolute ROSCO_LIB_PATH over bare filename
+        dll_filename = settings.ROSCO_LIB_PATH or controller.dll_filename or "libdiscon.dylib"
         dll_procname = controller.dll_procname or "DISCON"
         servodyn_config = ServoDynConfig(
             pc_mode=controller.pcmode,
