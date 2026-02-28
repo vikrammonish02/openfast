@@ -332,6 +332,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                     fst_name = None
                     for filename, content in files.items():
                         filepath = case_dir / filename
+                        filepath.parent.mkdir(parents=True, exist_ok=True)
                         filepath.write_text(content, encoding="utf-8")
                         file_list.append(filename)
                         if filename.endswith(".fst"):
