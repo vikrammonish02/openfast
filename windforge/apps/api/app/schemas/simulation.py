@@ -9,13 +9,43 @@ from pydantic import BaseModel, Field
 # DLC case specification (nested inside DLCDefinition)
 # ---------------------------------------------------------------------------
 class DLCCaseSpec(BaseModel):
-    """Specification for a single DLC within a definition."""
+    """Specification for a single DLC within a definition.
 
-    dlc_number: str = Field(..., description="e.g. '1.1', '1.3', '6.1'")
+    Supports both simple (original) and rich (IEC-enhanced) configurations.
+    The new fields all have defaults, so existing saved definitions remain
+    fully compatible.
+    """
+
+    dlc_number: str = Field(..., description="e.g. '1.1', '1.3', '6.1', '2.1c'")
     wind_speeds: list[float] = Field(..., description="List of wind speeds (m/s)")
     seeds: int = Field(default=6, ge=1, description="Number of random seeds")
     yaw_misalignments: list[float] = Field(
         default=[0.0], description="Yaw misalignment angles (deg)"
+    )
+
+    # --- IEC-enhanced fields (all optional with sensible defaults) ---
+    wind_condition: str = Field(
+        default="NTM",
+        description="Wind model: NTM, ETM, EWM, EOG, ECD, EDC, EWS, NWP",
+    )
+    partial_safety_factor: float = Field(
+        default=1.35, ge=0.0, description="Partial safety factor gamma_f"
+    )
+    analysis_type: str = Field(
+        default="ultimate",
+        description="'ultimate' or 'fatigue'",
+    )
+    simulation_length: float = Field(
+        default=600.0, gt=0, description="Simulation length in seconds"
+    )
+    init_length: float = Field(
+        default=200.0, ge=0, description="Initialization / discard length in seconds"
+    )
+    description: str = Field(
+        default="", description="Custom label or description for the DLC"
+    )
+    is_custom: bool = Field(
+        default=False, description="True for user-added sub-DLC variants"
     )
 
 
