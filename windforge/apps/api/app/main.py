@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session_factory, create_tables, engine
-from app.routers import auth, blades, controllers, files, projects, templates, towers, turbine_models, websocket
+from app.routers import auth, blades, controllers, files, projects, reference_data, templates, towers, turbine_models, websocket
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -115,6 +115,7 @@ app.include_router(dlc_router, prefix="/api/v1")
 app.include_router(websocket.router)
 app.include_router(templates.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
+app.include_router(reference_data.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

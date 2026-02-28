@@ -16,6 +16,7 @@ import TurbineAssembly from '@/routes/project/TurbineAssembly';
 import DLCMatrix from '@/routes/project/DLCMatrix';
 import SimulationRunner from '@/routes/project/SimulationRunner';
 import ResultsDashboard from '@/components/results/ResultsDashboard';
+import TurbineProperties from '@/components/turbine/TurbineProperties';
 import FileBrowser from '@/routes/project/FileBrowser';
 
 function App() {
@@ -58,6 +59,7 @@ function App() {
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />
+          <Route path="properties" element={<TurbineProperties />} />
           <Route path="files" element={<FileBrowser />} />
         </Route>
       </Route>

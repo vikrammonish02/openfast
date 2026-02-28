@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Maximize2,
   Check,
+  Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -63,7 +64,7 @@ interface Simulation {
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabKey = 'statistics' | 'del' | 'extreme' | 'envelopes' | 'timeseries' | 'report';
+type TabKey = 'statistics' | 'del' | 'extreme' | 'envelopes' | 'timeseries' | 'powercurve' | 'report';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'statistics', label: 'Statistics', icon: <BarChart3 size={14} /> },
@@ -71,6 +72,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'extreme', label: 'Extreme Loads', icon: <AlertTriangle size={14} /> },
   { key: 'envelopes', label: 'Load Envelopes', icon: <Layers size={14} /> },
   { key: 'timeseries', label: 'Time Series', icon: <TrendingUp size={14} /> },
+  { key: 'powercurve', label: 'Power Curve', icon: <Zap size={14} /> },
   { key: 'report', label: 'Report', icon: <FileText size={14} /> },
 ];
 
@@ -509,6 +511,10 @@ export default function ResultsDashboard() {
             data={tsData}
             loading={tsLoading}
           />
+        )}
+
+        {activeTab === 'powercurve' && (
+          <PowerCurveTab statistics={statistics} />
         )}
 
         {activeTab === 'report' && (
@@ -1055,6 +1061,8 @@ function TimeSeriesTab({
   data: any;
   loading: boolean;
 }) {
+  const [plotMode, setPlotMode] = useState<'overlay' | 'stacked'>('stacked');
+
   const toggleChannel = (ch: string) => {
     if (selectedChannels.includes(ch)) {
       onSelectChannels(selectedChannels.filter((c) => c !== ch));
@@ -1063,34 +1071,80 @@ function TimeSeriesTab({
     }
   };
 
-  // Build Plotly traces with dual Y-axis support.
-  // First channel → left axis (y), second channel → right axis (y2).
-  // Any additional channels alternate between the two axes.
-  const traces = useMemo(() => {
-    if (!data || !data.time || !data.channels) return [];
-    return selectedChannels
-      .filter((ch) => data.channels[ch])
-      .map((ch, i) => ({
-        x: data.time,
-        y: data.channels[ch].values,
-        type: 'scattergl' as const,
-        mode: 'lines' as const,
-        name: `${ch} (${data.channels[ch].unit})`,
-        yaxis: i % 2 === 0 ? 'y' : 'y2',
-        line: { color: TS_LINE_COLORS[i % TS_LINE_COLORS.length], width: 1.5 },
-      }));
-  }, [data, selectedChannels]);
+  // Active channels that exist in the data
+  const activeChannels = useMemo(
+    () => (data?.channels ? selectedChannels.filter((ch) => data.channels[ch]) : []),
+    [data, selectedChannels],
+  );
 
-  // Axis labels from the selected channels' units
+  // ── Overlay mode: dual Y-axis (odd → left, even → right) ──
+  const overlayTraces = useMemo(() => {
+    if (plotMode !== 'overlay' || !data?.time) return [];
+    return activeChannels.map((ch, i) => ({
+      x: data.time,
+      y: data.channels[ch].values,
+      type: 'scattergl' as const,
+      mode: 'lines' as const,
+      name: `${ch} (${data.channels[ch].unit})`,
+      yaxis: i % 2 === 0 ? 'y' : 'y2',
+      line: { color: TS_LINE_COLORS[i % TS_LINE_COLORS.length], width: 1.5 },
+    }));
+  }, [data, activeChannels, plotMode]);
+
   const yAxisLabels = useMemo(() => {
-    if (!data || !data.channels) return { left: '', right: '' };
-    const active = selectedChannels.filter((ch) => data.channels[ch]);
-    const leftChs = active.filter((_, i) => i % 2 === 0);
-    const rightChs = active.filter((_, i) => i % 2 === 1);
+    if (!data?.channels) return { left: '', right: '' };
+    const leftChs = activeChannels.filter((_, i) => i % 2 === 0);
+    const rightChs = activeChannels.filter((_, i) => i % 2 === 1);
     const labelFor = (chs: string[]) =>
       chs.map((ch) => `${ch} (${data.channels[ch].unit})`).join(' / ');
     return { left: labelFor(leftChs), right: labelFor(rightChs) };
-  }, [data, selectedChannels]);
+  }, [data, activeChannels]);
+
+  // ── Stacked mode: one subplot per channel, shared X-axis ──
+  const stackedTraces = useMemo(() => {
+    if (plotMode !== 'stacked' || !data?.time) return [];
+    return activeChannels.map((ch, i) => ({
+      x: data.time,
+      y: data.channels[ch].values,
+      type: 'scattergl' as const,
+      mode: 'lines' as const,
+      name: `${ch} (${data.channels[ch].unit})`,
+      xaxis: i === 0 ? 'x' : `x${i + 1}`,
+      yaxis: i === 0 ? 'y' : `y${i + 1}`,
+      line: { color: TS_LINE_COLORS[i % TS_LINE_COLORS.length], width: 1.5 },
+      showlegend: false,
+    }));
+  }, [data, activeChannels, plotMode]);
+
+  const stackedLayout = useMemo(() => {
+    if (plotMode !== 'stacked' || activeChannels.length === 0) return {};
+    const n = activeChannels.length;
+    const gap = 0.04;
+    const rowH = (1.0 - gap * (n - 1)) / n;
+    const layout: Record<string, any> = {};
+    for (let i = 0; i < n; i++) {
+      const bottom = 1.0 - (i + 1) * rowH - i * gap;
+      const top = bottom + rowH;
+      const ySuffix = i === 0 ? '' : `${i + 1}`;
+      const xSuffix = i === 0 ? '' : `${i + 1}`;
+      layout[`yaxis${ySuffix}`] = {
+        domain: [Math.max(0, bottom), top],
+        title: { text: `${activeChannels[i]} (${data?.channels?.[activeChannels[i]]?.unit ?? ''})`, font: { size: 10, color: TS_LINE_COLORS[i % TS_LINE_COLORS.length] } },
+        gridcolor: 'rgba(51,65,85,0.4)',
+        tickfont: { size: 9 },
+      };
+      layout[`xaxis${xSuffix}`] = {
+        anchor: `y${ySuffix}`,
+        gridcolor: 'rgba(51,65,85,0.4)',
+        ...(i === n - 1 ? { title: { text: 'Time (s)', font: { size: 11 } } } : { showticklabels: false }),
+        matches: i === 0 ? undefined : 'x',
+      };
+    }
+    return layout;
+  }, [plotMode, activeChannels, data]);
+
+  // Unified traces & check
+  const traces = plotMode === 'stacked' ? stackedTraces : overlayTraces;
 
   const displayChannels = channels.length > 0 ? channels : COMMON_CHANNELS;
 
@@ -1117,21 +1171,39 @@ function TimeSeriesTab({
         </div>
       </div>
 
-      {/* Channel multi-select */}
+      {/* Plot mode toggle + Channel multi-select */}
       <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Channels
-          {selectedChannels.length >= 2 && (
-            <span className="ml-2 normal-case tracking-normal text-slate-600">
-              (odd = left axis, even = right axis)
-            </span>
-          )}
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Channels
+            {plotMode === 'overlay' && selectedChannels.length >= 2 && (
+              <span className="ml-2 normal-case tracking-normal text-slate-600">
+                (odd = left axis, even = right axis)
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-0.5">
+            {(['stacked', 'overlay'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setPlotMode(mode)}
+                className={clsx(
+                  'rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors',
+                  plotMode === mode
+                    ? 'bg-accent-500/30 text-accent-300'
+                    : 'text-slate-500 hover:text-slate-300',
+                )}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           {displayChannels.map((ch) => {
             const isSelected = selectedChannels.includes(ch);
             const colorIdx = selectedChannels.indexOf(ch);
-            const axisLabel = isSelected && selectedChannels.length >= 2
+            const axisLabel = isSelected && plotMode === 'overlay' && selectedChannels.length >= 2
               ? colorIdx % 2 === 0 ? 'L' : 'R'
               : null;
             return (
@@ -1177,46 +1249,59 @@ function TimeSeriesTab({
         <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-2">
           <Plot
             data={traces}
-            layout={{
-              autosize: true,
-              height: 500,
-              margin: { l: 70, r: yAxisLabels.right ? 70 : 20, t: 30, b: 50 },
-              paper_bgcolor: 'rgba(0,0,0,0)',
-              plot_bgcolor: 'rgba(15,23,42,0.8)',
-              font: { color: '#94a3b8', size: 11 },
-              title: {
-                text: 'Time Series',
-                font: { size: 13, color: '#e2e8f0' },
-              },
-              xaxis: {
-                title: { text: 'Time (s)', font: { size: 11 } },
-                gridcolor: 'rgba(51,65,85,0.4)',
-              },
-              yaxis: {
-                title: yAxisLabels.left
-                  ? { text: yAxisLabels.left, font: { size: 11, color: TS_LINE_COLORS[0] } }
-                  : undefined,
-                gridcolor: 'rgba(51,65,85,0.4)',
-                tickfont: { color: TS_LINE_COLORS[0] },
-              },
-              yaxis2: yAxisLabels.right
+            layout={
+              plotMode === 'stacked'
                 ? {
-                    title: { text: yAxisLabels.right, font: { size: 11, color: TS_LINE_COLORS[1] } },
-                    overlaying: 'y' as const,
-                    side: 'right' as const,
-                    gridcolor: 'rgba(51,65,85,0.15)',
-                    tickfont: { color: TS_LINE_COLORS[1] },
-                    showgrid: false,
+                    autosize: true,
+                    height: Math.max(400, activeChannels.length * 180),
+                    margin: { l: 70, r: 20, t: 20, b: 50 },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(15,23,42,0.8)',
+                    font: { color: '#94a3b8', size: 11 },
+                    showlegend: false,
+                    ...stackedLayout,
                   }
-                : undefined,
-              legend: {
-                bgcolor: 'rgba(30,41,59,0.8)',
-                bordercolor: 'rgba(51,65,85,0.5)',
-                borderwidth: 1,
-                font: { size: 10 },
-              },
-              showlegend: true,
-            }}
+                : {
+                    autosize: true,
+                    height: 500,
+                    margin: { l: 70, r: yAxisLabels.right ? 70 : 20, t: 30, b: 50 },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(15,23,42,0.8)',
+                    font: { color: '#94a3b8', size: 11 },
+                    title: {
+                      text: 'Time Series',
+                      font: { size: 13, color: '#e2e8f0' },
+                    },
+                    xaxis: {
+                      title: { text: 'Time (s)', font: { size: 11 } },
+                      gridcolor: 'rgba(51,65,85,0.4)',
+                    },
+                    yaxis: {
+                      title: yAxisLabels.left
+                        ? { text: yAxisLabels.left, font: { size: 11, color: TS_LINE_COLORS[0] } }
+                        : undefined,
+                      gridcolor: 'rgba(51,65,85,0.4)',
+                      tickfont: { color: TS_LINE_COLORS[0] },
+                    },
+                    yaxis2: yAxisLabels.right
+                      ? {
+                          title: { text: yAxisLabels.right, font: { size: 11, color: TS_LINE_COLORS[1] } },
+                          overlaying: 'y' as const,
+                          side: 'right' as const,
+                          gridcolor: 'rgba(51,65,85,0.15)',
+                          tickfont: { color: TS_LINE_COLORS[1] },
+                          showgrid: false,
+                        }
+                      : undefined,
+                    legend: {
+                      bgcolor: 'rgba(30,41,59,0.8)',
+                      bordercolor: 'rgba(51,65,85,0.5)',
+                      borderwidth: 1,
+                      font: { size: 10 },
+                    },
+                    showlegend: true,
+                  }
+            }
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%' }}
           />
@@ -1236,6 +1321,120 @@ function TimeSeriesTab({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Power Curve Tab
+// ---------------------------------------------------------------------------
+
+function PowerCurveTab({ statistics }: { statistics: ResultsStatistics[] }) {
+  // Extract mean GenPwr, RotSpeed, BldPitch1 for each wind speed from completed statistics
+  const curveData = useMemo(() => {
+    const byWind = new Map<
+      number,
+      { genPwr: number[]; rotSpeed: number[]; bldPitch: number[] }
+    >();
+
+    for (const s of statistics) {
+      const cs = s.channel_statistics;
+      if (!cs) continue;
+      const ws = s.wind_speed;
+      if (!byWind.has(ws)) byWind.set(ws, { genPwr: [], rotSpeed: [], bldPitch: [] });
+      const bucket = byWind.get(ws)!;
+      if (cs['GenPwr']) bucket.genPwr.push(cs['GenPwr'].mean);
+      if (cs['RotSpeed']) bucket.rotSpeed.push(cs['RotSpeed'].mean);
+      if (cs['BldPitch1']) bucket.bldPitch.push(cs['BldPitch1'].mean);
+    }
+
+    const windSpeeds: number[] = [];
+    const genPwr: number[] = [];
+    const rotSpeed: number[] = [];
+    const bldPitch: number[] = [];
+
+    const sorted = Array.from(byWind.entries()).sort((a, b) => a[0] - b[0]);
+    for (const [ws, bucket] of sorted) {
+      windSpeeds.push(ws);
+      const avg = (arr: number[]) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+      genPwr.push(avg(bucket.genPwr));
+      rotSpeed.push(avg(bucket.rotSpeed));
+      bldPitch.push(avg(bucket.bldPitch));
+    }
+
+    return { windSpeeds, genPwr, rotSpeed, bldPitch };
+  }, [statistics]);
+
+  if (curveData.windSpeeds.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-600 bg-surface-dark">
+        <div className="text-center text-slate-500">
+          <Zap size={32} className="mx-auto mb-2 opacity-40" />
+          <p className="text-sm">
+            No simulation data available. Run simulations at multiple wind speeds to see the power curve.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 3 stacked subplots: GenPwr, RotSpeed, BldPitch1 vs Wind Speed
+  const channels = [
+    { key: 'genPwr', label: 'GenPwr (kW)', color: '#00b4d8', data: curveData.genPwr },
+    { key: 'rotSpeed', label: 'RotSpeed (rpm)', color: '#10b981', data: curveData.rotSpeed },
+    { key: 'bldPitch', label: 'BldPitch1 (deg)', color: '#f59e0b', data: curveData.bldPitch },
+  ];
+
+  const traces = channels.map((ch, i) => ({
+    x: curveData.windSpeeds,
+    y: ch.data,
+    type: 'scatter' as const,
+    mode: 'lines+markers' as const,
+    name: ch.label,
+    xaxis: i === 0 ? 'x' : `x${i + 1}`,
+    yaxis: i === 0 ? 'y' : `y${i + 1}`,
+    line: { color: ch.color, width: 2 },
+    marker: { size: 6, color: ch.color },
+    showlegend: false,
+  }));
+
+  const gap = 0.05;
+  const rowH = (1.0 - gap * 2) / 3;
+  const layoutAxes: Record<string, any> = {};
+  channels.forEach((ch, i) => {
+    const bottom = 1.0 - (i + 1) * rowH - i * gap;
+    const ySuffix = i === 0 ? '' : `${i + 1}`;
+    const xSuffix = i === 0 ? '' : `${i + 1}`;
+    layoutAxes[`yaxis${ySuffix}`] = {
+      domain: [Math.max(0, bottom), bottom + rowH],
+      title: { text: ch.label, font: { size: 11, color: ch.color } },
+      gridcolor: 'rgba(51,65,85,0.4)',
+    };
+    layoutAxes[`xaxis${xSuffix}`] = {
+      anchor: `y${ySuffix}`,
+      gridcolor: 'rgba(51,65,85,0.4)',
+      ...(i === 2 ? { title: { text: 'Wind Speed (m/s)', font: { size: 11 } } } : { showticklabels: false }),
+      matches: i === 0 ? undefined : 'x',
+    };
+  });
+
+  return (
+    <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-2">
+      <Plot
+        data={traces}
+        layout={{
+          autosize: true,
+          height: 600,
+          margin: { l: 70, r: 20, t: 20, b: 50 },
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(15,23,42,0.8)',
+          font: { color: '#94a3b8', size: 11 },
+          showlegend: false,
+          ...layoutAxes,
+        }}
+        config={{ displayModeBar: false, responsive: true }}
+        style={{ width: '100%' }}
+      />
     </div>
   );
 }

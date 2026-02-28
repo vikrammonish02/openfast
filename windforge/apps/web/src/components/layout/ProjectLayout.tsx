@@ -10,6 +10,7 @@ import {
   Table2,
   Play,
   BarChart3,
+  Wind,
   FolderOpen,
   ChevronRight,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ const tabs = [
   { path: 'dlc', label: 'DLC', icon: Table2 },
   { path: 'simulate', label: 'Simulate', icon: Play },
   { path: 'results', label: 'Results', icon: BarChart3 },
+  { path: 'properties', label: 'Properties', icon: Wind },
   { path: 'files', label: 'Files', icon: FolderOpen },
 ];
 
