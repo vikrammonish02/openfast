@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Save,
   FolderOpen,
@@ -23,6 +23,7 @@ import {
   ListFilter,
   Target,
   Crosshair,
+  ArrowRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -274,8 +275,10 @@ function defaultTurbSimParams(): TurbSimParams {
 
 export default function DLCMatrix() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
 
   const [name, setName] = useState('Default DLC Matrix');
+  const [showNextStep, setShowNextStep] = useState(false);
   const [turbineModels, setTurbineModels] = useState<TurbineModel[]>([]);
   const [selectedTurbineId, setSelectedTurbineId] = useState('');
   const [existingDefinitions, setExistingDefinitions] = useState<DLCDefinition[]>([]);
@@ -466,7 +469,8 @@ export default function DLCMatrix() {
   const handleGenerateCases = useCallback(async () => {
     if (enabledCount === 0) { toast.error('Enable at least one DLC'); return; }
     await handleSave();
-    toast.success(`${totalCases} cases ready for simulation`);
+    setShowNextStep(true);
+    toast.success(`${totalCases} cases saved — go to Simulate to run them`);
   }, [enabledCount, totalCases, handleSave]);
 
   const updateTurbSim = useCallback((patch: Partial<TurbSimParams>) => {
@@ -646,10 +650,27 @@ export default function DLCMatrix() {
           <div className="flex items-center justify-between text-sm"><span className="text-slate-400">Enabled DLCs</span><span className="font-semibold text-slate-100">{enabledCount}</span></div>
           <div className="flex items-center justify-between text-sm"><span className="text-slate-400">Total Cases</span><span className="font-semibold text-accent-300">{totalCases.toLocaleString()}</span></div>
           <button onClick={handleGenerateCases} disabled={enabledCount === 0 || saving} className="btn-primary w-full"><Zap size={16} />Generate Cases</button>
+          {showNextStep && activeDefinitionId && (
+            <div className="rounded-lg border border-emerald-600/40 bg-emerald-950/20 p-3 space-y-2">
+              <p className="text-xs text-emerald-300 font-medium">
+                ✓ {totalCases.toLocaleString()} cases saved to "{name}"
+              </p>
+              <p className="text-[10px] text-emerald-400/70">
+                Next: Create a simulation from this DLC definition to start running cases.
+              </p>
+              <button
+                onClick={() => navigate(`/projects/${projectId}/simulate`)}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+              >
+                <Play size={14} />Go to Simulate
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
           <button onClick={() => {
             const init: Record<string, DLCRowState> = {};
             DLC_CATALOG.forEach((d) => { init[d.number] = defaultRowState(d); });
-            setAllDLCs([...DLC_CATALOG]); setRows(init); setTurbSimParams(defaultTurbSimParams()); setActiveDefinitionId(null); toast('Reset to defaults');
+            setAllDLCs([...DLC_CATALOG]); setRows(init); setTurbSimParams(defaultTurbSimParams()); setActiveDefinitionId(null); setShowNextStep(false); toast('Reset to defaults');
           }} className="btn-secondary w-full text-xs"><RotateCcw size={14} />Reset All</button>
         </div>
       </div>
