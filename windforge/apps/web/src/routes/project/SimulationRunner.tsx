@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { simulationsApi, dlcDefinitionsApi, turbineModelsApi } from '@/api/client';
 import type { Simulation, SimulationCase, DLCDefinition, TurbineModel } from '@/types';
@@ -22,6 +22,10 @@ import {
   Wifi,
   WifiOff,
   FileText,
+  LineChart,
+  Search,
+  Filter,
+  BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -30,6 +34,15 @@ interface LogEntry {
   timestamp: string;
   level: 'info' | 'warning' | 'error' | 'success';
   message: string;
+}
+
+/** Build a descriptive case identifier string from case parameters. */
+function buildCaseName(c: SimulationCase): string {
+  const dlc = `DLC${c.dlc_number.replace('.', '')}`;
+  const ws = `v${c.wind_speed.toFixed(1)}`;
+  const seed = `s${c.seed_number}`;
+  const yaw = `y${c.yaw_misalignment >= 0 ? '' : ''}${c.yaw_misalignment.toFixed(0)}`;
+  return `${dlc}_${ws}_${seed}_${yaw}`;
 }
 
 export default function SimulationRunner() {
@@ -55,6 +68,8 @@ export default function SimulationRunner() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showLogs, setShowLogs] = useState(true);
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [caseFilter, setCaseFilter] = useState('');
+  const [caseStatusFilter, setCaseStatusFilter] = useState<string>('all');
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const addLog = useCallback((level: LogEntry['level'], message: string) => {
@@ -763,95 +778,225 @@ export default function SimulationRunner() {
               </div>
 
               {/* Cases table */}
-              {cases.length > 0 && (
-                <div className="rounded-xl border border-slate-600 bg-surface-dark-secondary overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-700 bg-surface-dark-tertiary flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-slate-200">
-                      Simulation Cases ({cases.length})
-                    </h4>
-                    <span className="text-xs text-slate-400">
-                      <FileText className="h-3.5 w-3.5 inline mr-1" />
-                      Each case runs TurbSim → OpenFAST → results parsing
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto max-h-72 overflow-y-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-surface-dark-tertiary sticky top-0">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">DLC</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Wind (m/s)</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Seed</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Yaw</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Progress</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-700">
-                        {cases.map((c) => (
-                          <>
-                            <tr key={c.id} className="hover:bg-surface-dark-tertiary">
-                              <td className="px-3 py-2 font-medium text-slate-100">{c.dlc_number}</td>
-                              <td className="px-3 py-2 text-slate-200">{c.wind_speed}</td>
-                              <td className="px-3 py-2 text-slate-200">{c.seed_number}</td>
-                              <td className="px-3 py-2 text-slate-200">{c.yaw_misalignment}°</td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-1.5">
-                                  {statusIcon(c.status)}
-                                  <span className="text-slate-200">{statusLabel(c.status)}</span>
-                                  {c.status === 'failed' && c.error_message && (
-                                    <button
-                                      onClick={() => toggleErrorExpanded(c.id)}
-                                      className="ml-1 text-danger-400 hover:text-danger-300"
-                                      title="View error"
-                                    >
-                                      {expandedErrors.has(c.id) ? (
-                                        <ChevronDown className="h-3.5 w-3.5" />
-                                      ) : (
-                                        <ChevronRight className="h-3.5 w-3.5" />
-                                      )}
-                                    </button>
+              {cases.length > 0 && (() => {
+                // Filter cases
+                const filteredCases = cases.filter((c) => {
+                  if (caseStatusFilter !== 'all' && c.status !== caseStatusFilter) return false;
+                  if (caseFilter) {
+                    const name = buildCaseName(c).toLowerCase();
+                    const q = caseFilter.toLowerCase();
+                    return name.includes(q) || c.dlc_number.includes(q);
+                  }
+                  return true;
+                });
+
+                // Compute unique DLC numbers and status counts for filter bar
+                const dlcNumbers = [...new Set(cases.map((c) => c.dlc_number))].sort();
+                const statusCounts = cases.reduce<Record<string, number>>((acc, c) => {
+                  acc[c.status] = (acc[c.status] || 0) + 1;
+                  return acc;
+                }, {});
+
+                return (
+                  <div className="rounded-xl border border-slate-600 bg-surface-dark-secondary overflow-hidden">
+                    {/* Header with search and filters */}
+                    <div className="px-4 py-3 border-b border-slate-700 bg-surface-dark-tertiary">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-slate-200">
+                          Simulation Cases ({filteredCases.length}{filteredCases.length !== cases.length ? ` of ${cases.length}` : ''})
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          {/* Status filter chips */}
+                          <div className="flex items-center gap-1">
+                            <Filter className="h-3 w-3 text-slate-500" />
+                            {['all', 'completed', 'running', 'pending', 'failed'].map((s) => {
+                              const count = s === 'all' ? cases.length : (statusCounts[s] || 0);
+                              if (s !== 'all' && count === 0) return null;
+                              return (
+                                <button
+                                  key={s}
+                                  onClick={() => setCaseStatusFilter(s)}
+                                  className={clsx(
+                                    'rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors',
+                                    caseStatusFilter === s
+                                      ? 'bg-accent-500/20 text-accent-300 ring-1 ring-inset ring-accent-500/40'
+                                      : 'text-slate-400 hover:text-slate-200 hover:bg-surface-dark/50',
                                   )}
-                                </div>
-                              </td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-20 rounded-full bg-slate-600">
-                                    <div
-                                      className={clsx(
-                                        'h-full rounded-full transition-all duration-300',
-                                        c.status === 'completed'
-                                          ? 'bg-success-500'
-                                          : c.status === 'failed'
-                                            ? 'bg-danger-500'
-                                            : 'bg-accent-500',
+                                >
+                                  {s === 'all' ? 'All' : statusLabel(s)} ({count})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Search bar */}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                        <input
+                          type="text"
+                          value={caseFilter}
+                          onChange={(e) => setCaseFilter(e.target.value)}
+                          placeholder="Filter cases... e.g. DLC11, v12, s3, y-8"
+                          className="w-full rounded-lg border border-slate-600 bg-surface-dark pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto max-h-[28rem] overflow-y-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-surface-dark-tertiary sticky top-0 z-10">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Case Name</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">DLC</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400 uppercase">Wind</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400 uppercase">Seed</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400 uppercase">Yaw</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">Progress</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-slate-400 uppercase">Time Series</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/50">
+                          {filteredCases.map((c) => {
+                            const caseName = buildCaseName(c);
+                            const isCompleted = c.status === 'completed';
+                            return (
+                              <React.Fragment key={c.id}>
+                                <tr className={clsx(
+                                  'transition-colors',
+                                  isCompleted ? 'hover:bg-surface-dark-tertiary/50 cursor-pointer' : 'hover:bg-surface-dark-tertiary/30',
+                                )}>
+                                  {/* Case name — main identifier */}
+                                  <td className="px-3 py-2">
+                                    <span className={clsx(
+                                      'font-mono text-xs font-semibold',
+                                      isCompleted ? 'text-accent-300' : 'text-slate-300',
+                                    )}>
+                                      {caseName}
+                                    </span>
+                                    {c.wall_time_seconds != null && (
+                                      <span className="ml-2 text-[10px] text-slate-500" title="Wall time">
+                                        {c.wall_time_seconds < 60
+                                          ? `${c.wall_time_seconds.toFixed(0)}s`
+                                          : `${(c.wall_time_seconds / 60).toFixed(1)}m`}
+                                      </span>
+                                    )}
+                                  </td>
+                                  {/* DLC number with colored badge */}
+                                  <td className="px-3 py-2">
+                                    <span className="inline-flex items-center rounded-md bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-300 ring-1 ring-inset ring-blue-500/25">
+                                      {c.dlc_number}
+                                    </span>
+                                  </td>
+                                  {/* Wind speed */}
+                                  <td className="px-3 py-2 text-right font-mono text-xs text-slate-200">
+                                    {c.wind_speed.toFixed(1)} <span className="text-slate-500">m/s</span>
+                                  </td>
+                                  {/* Seed */}
+                                  <td className="px-3 py-2 text-right font-mono text-xs text-slate-300">
+                                    #{c.seed_number}
+                                  </td>
+                                  {/* Yaw */}
+                                  <td className="px-3 py-2 text-right font-mono text-xs text-slate-300">
+                                    {c.yaw_misalignment >= 0 ? '+' : ''}{c.yaw_misalignment.toFixed(0)}°
+                                  </td>
+                                  {/* Status */}
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-1.5">
+                                      {statusIcon(c.status)}
+                                      <span className="text-xs text-slate-200">{statusLabel(c.status)}</span>
+                                      {c.status === 'failed' && c.error_message && (
+                                        <button
+                                          onClick={() => toggleErrorExpanded(c.id)}
+                                          className="ml-1 text-danger-400 hover:text-danger-300"
+                                          title="View error"
+                                        >
+                                          {expandedErrors.has(c.id) ? (
+                                            <ChevronDown className="h-3.5 w-3.5" />
+                                          ) : (
+                                            <ChevronRight className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
                                       )}
-                                      style={{ width: `${c.progress_percent}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs font-mono text-slate-400 w-8">
-                                    {c.progress_percent}%
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                            {c.status === 'failed' && c.error_message && expandedErrors.has(c.id) && (
-                              <tr key={`${c.id}-error`}>
-                                <td colSpan={6} className="px-3 py-2">
-                                  <div className="rounded-lg bg-danger-950/30 border border-danger-800/30 p-3">
-                                    <pre className="text-xs text-danger-300 font-mono whitespace-pre-wrap break-words">
-                                      {c.error_message}
-                                    </pre>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </>
-                        ))}
-                      </tbody>
-                    </table>
+                                    </div>
+                                  </td>
+                                  {/* Progress bar */}
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="h-1.5 w-16 rounded-full bg-slate-600">
+                                        <div
+                                          className={clsx(
+                                            'h-full rounded-full transition-all duration-300',
+                                            c.status === 'completed'
+                                              ? 'bg-success-500'
+                                              : c.status === 'failed'
+                                                ? 'bg-danger-500'
+                                                : 'bg-accent-500',
+                                          )}
+                                          style={{ width: `${c.progress_percent}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] font-mono text-slate-400 w-7">
+                                        {c.progress_percent}%
+                                      </span>
+                                    </div>
+                                  </td>
+                                  {/* View time series action */}
+                                  <td className="px-3 py-2 text-center">
+                                    {isCompleted ? (
+                                      <button
+                                        onClick={() => navigate(`/projects/${projectId}/results?sim=${selectedSim!.id}&case=${c.id}`)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-accent-500/15 px-2 py-1 text-[10px] font-medium text-accent-300 ring-1 ring-inset ring-accent-500/30 hover:bg-accent-500/25 hover:text-accent-200 transition-colors"
+                                        title={`View time series for ${caseName}`}
+                                      >
+                                        <LineChart className="h-3 w-3" />
+                                        View
+                                      </button>
+                                    ) : c.status === 'failed' ? (
+                                      <span className="text-[10px] text-danger-400">—</span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {/* Error expansion row */}
+                                {c.status === 'failed' && c.error_message && expandedErrors.has(c.id) && (
+                                  <tr key={`${c.id}-error`}>
+                                    <td colSpan={8} className="px-3 py-2">
+                                      <div className="rounded-lg bg-danger-950/30 border border-danger-800/30 p-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-[10px] font-semibold text-danger-300 uppercase tracking-wider">Error — {caseName}</span>
+                                        </div>
+                                        <pre className="text-xs text-danger-300 font-mono whitespace-pre-wrap break-words">
+                                          {c.error_message}
+                                        </pre>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Summary footer */}
+                    {cases.length > 5 && (
+                      <div className="px-4 py-2 border-t border-slate-700/50 bg-surface-dark-tertiary/50 flex items-center justify-between text-[10px] text-slate-500">
+                        <span>
+                          {dlcNumbers.length} DLC{dlcNumbers.length !== 1 ? 's' : ''}: {dlcNumbers.join(', ')}
+                        </span>
+                        <span>
+                          {statusCounts['completed'] || 0} completed · {statusCounts['running'] || 0} running · {statusCounts['pending'] || 0} pending{(statusCounts['failed'] || 0) > 0 ? ` · ${statusCounts['failed']} failed` : ''}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Console log */}
               <div className="rounded-xl border border-slate-600 bg-surface-dark-secondary overflow-hidden">

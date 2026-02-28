@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
   AlertTriangle,
@@ -123,10 +123,22 @@ const DLC_COLORS: Record<string, string> = {
 // Component
 // ---------------------------------------------------------------------------
 
+/** Build a descriptive case label from case data. */
+function buildCaseLabel(c: any): string {
+  const dlcNum = c.dlc_number ?? '';
+  const ws = typeof c.wind_speed === 'number' ? c.wind_speed.toFixed(1) : '?';
+  const seed = c.seed_number ?? '?';
+  const yaw = typeof c.yaw_misalignment === 'number' ? c.yaw_misalignment.toFixed(0) : '0';
+  return `DLC${dlcNum.replace('.', '')}_v${ws}_s${seed}_y${yaw}`;
+}
+
 export default function ResultsDashboard() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [searchParams] = useSearchParams();
+  const urlSimId = searchParams.get('sim');
+  const urlCaseId = searchParams.get('case');
 
-  const [activeTab, setActiveTab] = useState<TabKey>('statistics');
+  const [activeTab, setActiveTab] = useState<TabKey>(urlCaseId ? 'timeseries' : 'statistics');
   const [simulations, setSimulations] = useState<Simulation[]>([]);
   const [selectedSimId, setSelectedSimId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,11 +181,16 @@ export default function ResultsDashboard() {
       .then((res) => {
         const sims = (res.data as Simulation[]).filter((s) => s.status === 'completed');
         setSimulations(sims);
-        if (sims.length > 0) setSelectedSimId(sims[0].id);
+        // Pre-select from URL param or default to first
+        if (urlSimId && sims.find((s) => s.id === urlSimId)) {
+          setSelectedSimId(urlSimId);
+        } else if (sims.length > 0) {
+          setSelectedSimId(sims[0].id);
+        }
       })
       .catch(() => toast.error('Failed to load simulations'))
       .finally(() => setLoading(false));
-  }, [projectId]);
+  }, [projectId, urlSimId]);
 
   // ---- Fetch results when sim changes ----
   useEffect(() => {
@@ -203,16 +220,22 @@ export default function ResultsDashboard() {
       .then((res) => {
         const cases = (res.data as any[])
           .filter((c: any) => c.status === 'completed')
-          .map((c: any) => ({ id: c.id, label: c.name || c.id }));
+          .map((c: any) => ({ id: c.id, label: buildCaseLabel(c) }));
         setTsCases(cases);
-        if (cases.length > 0) setTsCase(cases[0].id);
-        else setTsCase('');
+        // Pre-select from URL param or default to first
+        if (urlCaseId && cases.find((c) => c.id === urlCaseId)) {
+          setTsCase(urlCaseId);
+        } else if (cases.length > 0) {
+          setTsCase(cases[0].id);
+        } else {
+          setTsCase('');
+        }
       })
       .catch(() => {
         setTsCases([]);
         setTsCase('');
       });
-  }, [projectId, selectedSimId]);
+  }, [projectId, selectedSimId, urlCaseId]);
 
   // ---- Fetch channels for selected case ----
   useEffect(() => {
