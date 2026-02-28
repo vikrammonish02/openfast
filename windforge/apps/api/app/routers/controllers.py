@@ -1,6 +1,5 @@
 """Controller CRUD endpoints with ServoDyn file preview."""
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/projects/{project_id}/controllers", tags=["controlle
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> Project:
+async def _verify_project(project_id: str, org_id: str, db: AsyncSession) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
@@ -31,7 +30,7 @@ async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> P
 
 
 async def _get_controller_or_404(
-    controller_id: UUID, project_id: UUID, db: AsyncSession
+    controller_id: str, project_id: str, db: AsyncSession
 ) -> Controller:
     result = await db.execute(
         select(Controller).where(
@@ -130,7 +129,7 @@ def _generate_servodyn_file(ctrl: Controller, project: Project) -> str:
 
 @router.get("", response_model=list[ControllerResponse])
 async def list_controllers(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -145,7 +144,7 @@ async def list_controllers(
 
 @router.post("", response_model=ControllerResponse, status_code=status.HTTP_201_CREATED)
 async def create_controller(
-    project_id: UUID,
+    project_id: str,
     body: ControllerCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -160,8 +159,8 @@ async def create_controller(
 
 @router.get("/{controller_id}", response_model=ControllerResponse)
 async def get_controller(
-    project_id: UUID,
-    controller_id: UUID,
+    project_id: str,
+    controller_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -172,8 +171,8 @@ async def get_controller(
 
 @router.put("/{controller_id}", response_model=ControllerResponse)
 async def update_controller(
-    project_id: UUID,
-    controller_id: UUID,
+    project_id: str,
+    controller_id: str,
     body: ControllerUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -192,8 +191,8 @@ async def update_controller(
 
 @router.delete("/{controller_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_controller(
-    project_id: UUID,
-    controller_id: UUID,
+    project_id: str,
+    controller_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -205,8 +204,8 @@ async def delete_controller(
 
 @router.get("/{controller_id}/preview", response_class=PlainTextResponse)
 async def preview_controller(
-    project_id: UUID,
-    controller_id: UUID,
+    project_id: str,
+    controller_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

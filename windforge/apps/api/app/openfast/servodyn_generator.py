@@ -104,7 +104,7 @@ class ServoDynConfig:
     s_stc_files: list[str] = field(default_factory=list)
 
     # --- Bladed Interface ---
-    dll_file_name: str = "/Users/vikram/2026_aldott_website/server/rosco_full/rosco/lib/libdiscon.dylib"
+    dll_file_name: str = ""  # Set dynamically from settings.ROSCO_LIB_PATH
     dll_in_file: str = "DISCON.IN"
     dll_proc_name: str = "DISCON"
     dll_dt: str = "default"

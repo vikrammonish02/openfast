@@ -2,10 +2,9 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,14 +22,14 @@ class DLCStatus(str, enum.Enum):
 class DLCDefinition(Base):
     __tablename__ = "dlc_definitions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    turbine_model_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("turbine_models.id", ondelete="CASCADE"), nullable=False
+    turbine_model_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("turbine_models.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
@@ -43,12 +42,12 @@ class DLCDefinition(Base):
 
     total_case_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[DLCStatus] = mapped_column(
-        Enum(DLCStatus, name="dlc_status", create_constraint=True),
+        Enum(DLCStatus, name="dlc_status", create_constraint=False, native_enum=False),
         default=DLCStatus.DRAFT,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -77,22 +76,22 @@ class SimulationStatus(str, enum.Enum):
 class Simulation(Base):
     __tablename__ = "simulations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    dlc_definition_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("dlc_definitions.id", ondelete="CASCADE"), nullable=False
+    dlc_definition_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("dlc_definitions.id", ondelete="CASCADE"), nullable=False
     )
-    turbine_model_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("turbine_models.id", ondelete="CASCADE"), nullable=False
+    turbine_model_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("turbine_models.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     status: Mapped[SimulationStatus] = mapped_column(
-        Enum(SimulationStatus, name="simulation_status", create_constraint=True),
+        Enum(SimulationStatus, name="simulation_status", create_constraint=False, native_enum=False),
         default=SimulationStatus.PENDING,
         nullable=False,
     )
@@ -103,13 +102,13 @@ class Simulation(Base):
     agent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime, nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -150,11 +149,11 @@ class CaseStatus(str, enum.Enum):
 class SimulationCase(Base):
     __tablename__ = "simulation_cases"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    simulation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
+    simulation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
     )
     dlc_number: Mapped[str] = mapped_column(String(20), nullable=False)  # e.g. "1.1", "1.3"
     wind_speed: Mapped[float] = mapped_column(Float, nullable=False)  # m/s
@@ -165,7 +164,7 @@ class SimulationCase(Base):
     input_files: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     status: Mapped[CaseStatus] = mapped_column(
-        Enum(CaseStatus, name="case_status", create_constraint=True),
+        Enum(CaseStatus, name="case_status", create_constraint=False, native_enum=False),
         default=CaseStatus.PENDING,
         nullable=False,
     )
@@ -174,14 +173,14 @@ class SimulationCase(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime, nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime, nullable=True
     )
     wall_time_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -203,14 +202,14 @@ class SimulationCase(Base):
 class ResultsStatistics(Base):
     __tablename__ = "results_statistics"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    simulation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
+    simulation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
     )
-    simulation_case_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("simulation_cases.id", ondelete="CASCADE"), nullable=False
+    simulation_case_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("simulation_cases.id", ondelete="CASCADE"), nullable=False
     )
     dlc_number: Mapped[str] = mapped_column(String(20), nullable=False)
     wind_speed: Mapped[float] = mapped_column(Float, nullable=False)
@@ -219,7 +218,7 @@ class ResultsStatistics(Base):
     channel_statistics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -240,11 +239,11 @@ class ResultsStatistics(Base):
 class ResultsDEL(Base):
     __tablename__ = "results_del"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    simulation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
+    simulation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
     )
 
     # DEL results: {channel_name: {del_value, ...}, ...}
@@ -253,7 +252,7 @@ class ResultsDEL(Base):
     n_equivalent: Mapped[float] = mapped_column(Float, nullable=False, default=1e7)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -269,18 +268,18 @@ class ResultsDEL(Base):
 class ResultsExtreme(Base):
     __tablename__ = "results_extreme"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    simulation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
+    simulation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False
     )
 
     # Extreme load results: {channel: {max, min, associated_values...}, ...}
     extreme_loads: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships

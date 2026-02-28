@@ -1,6 +1,5 @@
 """Turbine Model CRUD endpoints."""
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -16,7 +15,7 @@ from app.schemas.components import TurbineModelCreate, TurbineModelResponse, Tur
 router = APIRouter(prefix="/projects/{project_id}/turbine-models", tags=["turbine-models"])
 
 
-async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> Project:
+async def _verify_project(project_id: str, org_id: str, db: AsyncSession) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
@@ -26,7 +25,7 @@ async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> P
     return project
 
 
-async def _get_model_or_404(model_id: UUID, project_id: UUID, db: AsyncSession) -> TurbineModel:
+async def _get_model_or_404(model_id: str, project_id: str, db: AsyncSession) -> TurbineModel:
     result = await db.execute(
         select(TurbineModel).where(TurbineModel.id == model_id, TurbineModel.project_id == project_id)
     )
@@ -38,7 +37,7 @@ async def _get_model_or_404(model_id: UUID, project_id: UUID, db: AsyncSession) 
 
 @router.get("", response_model=list[TurbineModelResponse])
 async def list_turbine_models(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -53,7 +52,7 @@ async def list_turbine_models(
 
 @router.post("", response_model=TurbineModelResponse, status_code=status.HTTP_201_CREATED)
 async def create_turbine_model(
-    project_id: UUID,
+    project_id: str,
     body: TurbineModelCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -68,8 +67,8 @@ async def create_turbine_model(
 
 @router.get("/{model_id}", response_model=TurbineModelResponse)
 async def get_turbine_model(
-    project_id: UUID,
-    model_id: UUID,
+    project_id: str,
+    model_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -80,8 +79,8 @@ async def get_turbine_model(
 
 @router.put("/{model_id}", response_model=TurbineModelResponse)
 async def update_turbine_model(
-    project_id: UUID,
-    model_id: UUID,
+    project_id: str,
+    model_id: str,
     body: TurbineModelUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -100,8 +99,8 @@ async def update_turbine_model(
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_turbine_model(
-    project_id: UUID,
-    model_id: UUID,
+    project_id: str,
+    model_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

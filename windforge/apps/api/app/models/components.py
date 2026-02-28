@@ -2,10 +2,10 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
-    ARRAY,
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -14,9 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    func,
 )
-from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -28,11 +26,11 @@ from app.database import Base
 class Tower(Base):
     __tablename__ = "towers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -52,22 +50,15 @@ class Tower(Base):
     stations: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Mode shape polynomial coefficients (6 coefficients each, order 2-6)
-    fa_mode_1_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
-    fa_mode_2_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
-    ss_mode_1_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
-    ss_mode_2_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
+    # Stored as JSON arrays instead of PostgreSQL ARRAY(Float)
+    fa_mode_1_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    fa_mode_2_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    ss_mode_1_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    ss_mode_2_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -83,11 +74,11 @@ class Tower(Base):
 class Blade(Base):
     __tablename__ = "blades"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -102,16 +93,10 @@ class Blade(Base):
     # Each: {frac, chord, aero_twist, airfoil_id, aero_center}
     aero_stations: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
-    # Mode shape polynomial coefficients
-    flap_mode_1_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
-    flap_mode_2_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
-    edge_mode_1_coeffs: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True
-    )
+    # Mode shape polynomial coefficients (stored as JSON arrays)
+    flap_mode_1_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    flap_mode_2_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    edge_mode_1_coeffs: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Damping
     blade_flap_damping: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
@@ -119,7 +104,7 @@ class Blade(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -135,11 +120,11 @@ class Blade(Base):
 class Airfoil(Base):
     __tablename__ = "airfoils"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    org_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     family: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g. "NACA", "DU"
@@ -150,7 +135,7 @@ class Airfoil(Base):
 
     source: Mapped[str | None] = mapped_column(Text, nullable=True)  # origin / reference
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -175,17 +160,17 @@ class ControllerType(str, enum.Enum):
 class Controller(Base):
     __tablename__ = "controllers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     controller_type: Mapped[ControllerType] = mapped_column(
-        Enum(ControllerType, name="controller_type", create_constraint=True),
+        Enum(ControllerType, name="controller_type", create_constraint=False, native_enum=False),
         default=ControllerType.BASELINE,
         nullable=False,
     )
@@ -200,7 +185,7 @@ class Controller(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships
@@ -216,24 +201,24 @@ class Controller(Base):
 class TurbineModel(Base):
     __tablename__ = "turbine_models"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # Component references
-    tower_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("towers.id", ondelete="SET NULL"), nullable=True
+    tower_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("towers.id", ondelete="SET NULL"), nullable=True
     )
-    blade_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("blades.id", ondelete="SET NULL"), nullable=True
+    blade_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("blades.id", ondelete="SET NULL"), nullable=True
     )
-    controller_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("controllers.id", ondelete="SET NULL"), nullable=True
+    controller_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("controllers.id", ondelete="SET NULL"), nullable=True
     )
 
     # Drivetrain
@@ -268,7 +253,7 @@ class TurbineModel(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # relationships

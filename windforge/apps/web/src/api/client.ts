@@ -28,8 +28,15 @@ export type { SimulationCase } from '@/types';
 
 // ─── Axios Instance ──────────────────────────────────────────────────────────
 
+// In Electron desktop mode, the preload script injects the backend URL.
+// In dev mode (Vite proxy), we use the default relative path.
+const API_BASE =
+  (window as unknown as Record<string, string>).__WINDFORGE_API_URL__
+    ? `${(window as unknown as Record<string, string>).__WINDFORGE_API_URL__}/api/v1`
+    : '/api/v1';
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -50,13 +57,37 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('windforge_token');
-      if (window.location.pathname !== '/login') {
+      // In desktop mode (Electron), don't redirect to login
+      const isDesktop = !!(window as unknown as Record<string, string>).__WINDFORGE_API_URL__;
+      if (!isDesktop && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }
     return Promise.reject(error);
   },
 );
+
+// ─── WebSocket base URL helper ───────────────────────────────────────────────
+
+const backendOrigin =
+  (window as unknown as Record<string, string>).__WINDFORGE_API_URL__ || '';
+
+export function getWsBaseUrl(): string {
+  if (backendOrigin) {
+    return backendOrigin.replace(/^http/, 'ws');
+  }
+  // Dev mode: same host
+  return `ws://${window.location.host}`;
+}
+
+// ─── Config API ─────────────────────────────────────────────────────────────
+
+export const configApi = {
+  getConfig: async (): Promise<{ desktop_mode: boolean; version: string }> => {
+    const res = await api.get<{ desktop_mode: boolean; version: string }>('/config');
+    return res.data;
+  },
+};
 
 // ─── Auth API ────────────────────────────────────────────────────────────────
 

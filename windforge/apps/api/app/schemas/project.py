@@ -1,7 +1,6 @@
 """Project schemas."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -61,9 +60,9 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(BaseModel):
     """Public representation of a project."""
 
-    id: UUID
-    org_id: UUID
-    created_by: UUID | None = None
+    id: str
+    org_id: str
+    created_by: str | None = None
     name: str
     description: str | None = None
 

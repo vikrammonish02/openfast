@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authApi } from '@/api/client';
+import { authApi, configApi } from '@/api/client';
 import type { User } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -8,6 +8,7 @@ interface AuthState {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isDesktopMode: boolean;
 
   login: (email: string, password: string) => Promise<void>;
   register: (
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('windforge_token'),
   isLoading: true,
   isAuthenticated: false,
+  isDesktopMode: false,
 
   setToken: (token: string) => {
     localStorage.setItem('windforge_token', token);
@@ -92,6 +94,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadUser: async () => {
+    // Check if we're in desktop mode
+    try {
+      const config = await configApi.getConfig();
+      if (config.desktop_mode) {
+        set({ isDesktopMode: true });
+
+        // Auto-login if no token stored
+        const token = get().token;
+        if (!token) {
+          const tokenData = await authApi.login(
+            'admin@windforge.app',
+            'windforge',
+          );
+          localStorage.setItem('windforge_token', tokenData.access_token);
+          set({ token: tokenData.access_token, isAuthenticated: true });
+
+          const user = await authApi.getMe();
+          set({ user, isAuthenticated: true, isLoading: false });
+          return;
+        }
+      }
+    } catch {
+      // Config endpoint not available — not desktop mode, continue normally
+    }
+
     const token = get().token;
     if (!token) {
       set({ isLoading: false, isAuthenticated: false });

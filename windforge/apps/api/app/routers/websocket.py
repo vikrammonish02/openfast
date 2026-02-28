@@ -16,7 +16,6 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
@@ -32,21 +31,21 @@ router = APIRouter(tags=["websocket"])
 
 # In-memory registry of connected WebSocket clients per simulation.
 # In production this would be backed by Redis pub/sub or similar.
-_connections: dict[UUID, set[WebSocket]] = {}
+_connections: dict[str, set[WebSocket]] = {}
 
 # Global event bus — agents push updates here, the WS loop forwards them.
 # Keyed by simulation_id.  Each value is an asyncio.Queue of dicts.
-_event_queues: dict[UUID, asyncio.Queue[dict]] = {}
+_event_queues: dict[str, asyncio.Queue[dict]] = {}
 
 
-def get_event_queue(simulation_id: UUID) -> asyncio.Queue[dict]:
+def get_event_queue(simulation_id: str) -> asyncio.Queue[dict]:
     """Return (or create) the event queue for a given simulation."""
     if simulation_id not in _event_queues:
         _event_queues[simulation_id] = asyncio.Queue(maxsize=10_000)
     return _event_queues[simulation_id]
 
 
-async def publish_event(simulation_id: UUID, event: dict) -> None:
+async def publish_event(simulation_id: str, event: dict) -> None:
     """Push an event into the simulation's queue so connected clients receive it."""
     q = get_event_queue(simulation_id)
     try:
@@ -55,20 +54,18 @@ async def publish_event(simulation_id: UUID, event: dict) -> None:
         logger.warning("Event queue full for simulation %s — dropping event", simulation_id)
 
 
-async def _authenticate(token: str) -> UUID | None:
+async def _authenticate(token: str) -> str | None:
     """Validate a JWT token and return the user_id, or None on failure."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_id_str: str | None = payload.get("sub")
-        if user_id_str is None:
-            return None
-        return UUID(user_id_str)
+        user_id: str | None = payload.get("sub")
+        return user_id
     except (JWTError, ValueError):
         return None
 
 
 async def _verify_simulation_access(
-    simulation_id: UUID, user_id: UUID
+    simulation_id: str, user_id: str
 ) -> bool:
     """Check that the user's org owns the simulation."""
     async with async_session_factory() as db:
@@ -101,7 +98,7 @@ async def _verify_simulation_access(
 
 async def _forward_events(
     ws: WebSocket,
-    simulation_id: UUID,
+    simulation_id: str,
     subscribed_channels: set[str],
 ) -> None:
     """Background task that reads from the event queue and sends to the client."""
@@ -120,7 +117,7 @@ async def _forward_events(
 async def _handle_client_message(
     data: dict,
     subscribed_channels: set[str],
-    simulation_id: UUID,
+    simulation_id: str,
 ) -> dict | None:
     """Process a client command and return an optional response."""
     action = data.get("action")
@@ -133,13 +130,9 @@ async def _handle_client_message(
         return {"type": "subscribed", "channels": list(subscribed_channels)}
 
     if action == "cancel_case":
-        case_id_str = data.get("case_id")
-        if not case_id_str:
+        case_id = data.get("case_id")
+        if not case_id:
             return {"type": "error", "message": "case_id required"}
-        try:
-            case_id = UUID(case_id_str)
-        except ValueError:
-            return {"type": "error", "message": "Invalid case_id"}
 
         async with async_session_factory() as db:
             result = await db.execute(
@@ -166,17 +159,17 @@ async def _handle_client_message(
             {
                 "channel": "progress",
                 "type": "case_cancelled",
-                "case_id": str(case_id),
+                "case_id": case_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return {"type": "case_cancelled", "case_id": str(case_id)}
+        return {"type": "case_cancelled", "case_id": case_id}
 
     return {"type": "error", "message": f"Unknown action: {action}"}
 
 
 @router.websocket("/ws/{simulation_id}")
-async def websocket_endpoint(websocket: WebSocket, simulation_id: UUID, token: str = ""):
+async def websocket_endpoint(websocket: WebSocket, simulation_id: str, token: str = ""):
     """WebSocket endpoint for real-time simulation monitoring."""
 
     # --- authenticate ---

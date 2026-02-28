@@ -125,6 +125,7 @@ def _nrel5mw_tower_stations() -> list[TowerStation]:
 class ElastoDynBladeConfig:
     """Blade structural configuration for ElastoDyn blade file."""
     n_bl_inp_st: int = 49
+    bld_flex_l: float = 61.5       # Blade flexible length (m) — carried for main ElastoDyn
     bld_fl_dmp_1: float = 0.477465  # Blade flap mode #1 damping (%)
     bld_fl_dmp_2: float = 0.477465  # Blade flap mode #2 damping (%)
     bld_ed_dmp_1: float = 0.477465  # Blade edge mode #1 damping (%)

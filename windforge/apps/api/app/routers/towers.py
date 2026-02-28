@@ -1,6 +1,5 @@
 """Tower CRUD endpoints with ElastoDyn file preview."""
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/projects/{project_id}/towers", tags=["towers"])
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> Project:
+async def _verify_project(project_id: str, org_id: str, db: AsyncSession) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
@@ -30,7 +29,7 @@ async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> P
     return project
 
 
-async def _get_tower_or_404(tower_id: UUID, project_id: UUID, db: AsyncSession) -> Tower:
+async def _get_tower_or_404(tower_id: str, project_id: str, db: AsyncSession) -> Tower:
     result = await db.execute(
         select(Tower).where(Tower.id == tower_id, Tower.project_id == project_id)
     )
@@ -127,7 +126,7 @@ def _generate_elastodyn_tower_file(tower: Tower, project: Project) -> str:
 # ---- GET / ----------------------------------------------------------------
 @router.get("", response_model=list[TowerResponse])
 async def list_towers(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -143,7 +142,7 @@ async def list_towers(
 # ---- POST / ---------------------------------------------------------------
 @router.post("", response_model=TowerResponse, status_code=status.HTTP_201_CREATED)
 async def create_tower(
-    project_id: UUID,
+    project_id: str,
     body: TowerCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -167,8 +166,8 @@ async def create_tower(
 # ---- GET /{id} -------------------------------------------------------------
 @router.get("/{tower_id}", response_model=TowerResponse)
 async def get_tower(
-    project_id: UUID,
-    tower_id: UUID,
+    project_id: str,
+    tower_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -180,8 +179,8 @@ async def get_tower(
 # ---- PUT /{id} -------------------------------------------------------------
 @router.put("/{tower_id}", response_model=TowerResponse)
 async def update_tower(
-    project_id: UUID,
-    tower_id: UUID,
+    project_id: str,
+    tower_id: str,
     body: TowerUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -207,8 +206,8 @@ async def update_tower(
 # ---- DELETE /{id} ----------------------------------------------------------
 @router.delete("/{tower_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tower(
-    project_id: UUID,
-    tower_id: UUID,
+    project_id: str,
+    tower_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -221,8 +220,8 @@ async def delete_tower(
 # ---- GET /{id}/preview — ElastoDyn tower file preview ----------------------
 @router.get("/{tower_id}/preview", response_class=PlainTextResponse)
 async def preview_tower(
-    project_id: UUID,
-    tower_id: UUID,
+    project_id: str,
+    tower_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

@@ -1,6 +1,5 @@
 """Blade CRUD endpoints with ElastoDyn and AeroDyn file previews."""
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/projects/{project_id}/blades", tags=["blades"])
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> Project:
+async def _verify_project(project_id: str, org_id: str, db: AsyncSession) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
@@ -30,7 +29,7 @@ async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> P
     return project
 
 
-async def _get_blade_or_404(blade_id: UUID, project_id: UUID, db: AsyncSession) -> Blade:
+async def _get_blade_or_404(blade_id: str, project_id: str, db: AsyncSession) -> Blade:
     result = await db.execute(
         select(Blade).where(Blade.id == blade_id, Blade.project_id == project_id)
     )
@@ -153,7 +152,7 @@ def _generate_aerodyn_blade_file(blade: Blade, project: Project) -> str:
 
 @router.get("", response_model=list[BladeResponse])
 async def list_blades(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -168,7 +167,7 @@ async def list_blades(
 
 @router.post("", response_model=BladeResponse, status_code=status.HTTP_201_CREATED)
 async def create_blade(
-    project_id: UUID,
+    project_id: str,
     body: BladeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -195,8 +194,8 @@ async def create_blade(
 
 @router.get("/{blade_id}", response_model=BladeResponse)
 async def get_blade(
-    project_id: UUID,
-    blade_id: UUID,
+    project_id: str,
+    blade_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -207,8 +206,8 @@ async def get_blade(
 
 @router.put("/{blade_id}", response_model=BladeResponse)
 async def update_blade(
-    project_id: UUID,
-    blade_id: UUID,
+    project_id: str,
+    blade_id: str,
     body: BladeUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -239,8 +238,8 @@ async def update_blade(
 
 @router.delete("/{blade_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_blade(
-    project_id: UUID,
-    blade_id: UUID,
+    project_id: str,
+    blade_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -252,8 +251,8 @@ async def delete_blade(
 
 @router.get("/{blade_id}/preview-ed", response_class=PlainTextResponse)
 async def preview_blade_elastodyn(
-    project_id: UUID,
-    blade_id: UUID,
+    project_id: str,
+    blade_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -265,8 +264,8 @@ async def preview_blade_elastodyn(
 
 @router.get("/{blade_id}/preview-ad", response_class=PlainTextResponse)
 async def preview_blade_aerodyn(
-    project_id: UUID,
-    blade_id: UUID,
+    project_id: str,
+    blade_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

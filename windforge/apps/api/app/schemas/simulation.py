@@ -1,7 +1,6 @@
 """Simulation, DLC, case, and results schemas."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -40,7 +39,7 @@ class TurbSimParamsSchema(BaseModel):
 # ---------------------------------------------------------------------------
 class DLCDefinitionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    turbine_model_id: UUID
+    turbine_model_id: str
     dlc_cases: list[DLCCaseSpec] | None = None
     turbsim_params: TurbSimParamsSchema | None = None
 
@@ -52,9 +51,9 @@ class DLCDefinitionUpdate(BaseModel):
 
 
 class DLCDefinitionResponse(BaseModel):
-    id: UUID
-    project_id: UUID
-    turbine_model_id: UUID
+    id: str
+    project_id: str
+    turbine_model_id: str
     name: str
     dlc_cases: list[DLCCaseSpec] | None = None
     turbsim_params: TurbSimParamsSchema | None = None
@@ -70,15 +69,15 @@ class DLCDefinitionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 class SimulationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    dlc_definition_id: UUID
-    turbine_model_id: UUID
+    dlc_definition_id: str
+    turbine_model_id: str
 
 
 class SimulationResponse(BaseModel):
-    id: UUID
-    project_id: UUID
-    dlc_definition_id: UUID
-    turbine_model_id: UUID
+    id: str
+    project_id: str
+    dlc_definition_id: str
+    turbine_model_id: str
     name: str
     status: str
     total_cases: int
@@ -103,8 +102,8 @@ class SimulationWithProgress(SimulationResponse):
 # SimulationCase
 # ---------------------------------------------------------------------------
 class SimulationCaseResponse(BaseModel):
-    id: UUID
-    simulation_id: UUID
+    id: str
+    simulation_id: str
     dlc_number: str
     wind_speed: float
     seed_number: int
@@ -138,8 +137,8 @@ class ChannelStatistic(BaseModel):
 
 
 class ResultsStatisticsResponse(BaseModel):
-    id: UUID
-    simulation_case_id: UUID
+    id: str
+    simulation_case_id: str
     dlc_number: str
     wind_speed: float
     channel_statistics: dict | None = None
@@ -149,8 +148,8 @@ class ResultsStatisticsResponse(BaseModel):
 
 
 class ResultsDELResponse(BaseModel):
-    id: UUID
-    simulation_id: UUID
+    id: str
+    simulation_id: str
     del_results: dict | None = None
     m_exponent: float
     n_equivalent: float
@@ -160,8 +159,8 @@ class ResultsDELResponse(BaseModel):
 
 
 class ResultsExtremeResponse(BaseModel):
-    id: UUID
-    simulation_id: UUID
+    id: str
+    simulation_id: str
     extreme_loads: dict | None = None
     created_at: datetime
 

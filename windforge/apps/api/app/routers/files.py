@@ -1,7 +1,6 @@
 """File browser endpoints for viewing generated OpenFAST input files."""
 
 from pathlib import Path
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -28,7 +27,7 @@ class FileNode(BaseModel):
 
 
 async def _verify_project_access(
-    project_id: UUID, user: User, db: AsyncSession
+    project_id: str, user: User, db: AsyncSession
 ) -> None:
     """Verify that the user's org owns the project."""
     result = await db.execute(
@@ -41,7 +40,7 @@ async def _verify_project_access(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
-def _get_project_dir(project_id: UUID) -> Path:
+def _get_project_dir(project_id: str) -> Path:
     """Get the project files directory."""
     return Path(settings.PROJECTS_DIR) / str(project_id)
 
@@ -81,7 +80,7 @@ def _build_file_tree(root: Path, rel_base: Path | None = None) -> list[FileNode]
 
 @router.get("", response_model=list[FileNode])
 async def list_files(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -97,7 +96,7 @@ async def list_files(
 
 @router.get("/content/{file_path:path}")
 async def get_file_content(
-    project_id: UUID,
+    project_id: str,
     file_path: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -133,7 +132,7 @@ async def get_file_content(
 
 @router.get("/download/{file_path:path}")
 async def download_file(
-    project_id: UUID,
+    project_id: str,
     file_path: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

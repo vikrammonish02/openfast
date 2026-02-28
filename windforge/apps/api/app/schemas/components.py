@@ -1,7 +1,6 @@
 """Component schemas: Tower, Blade, Airfoil, Controller, TurbineModel."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, Field
 
@@ -91,8 +90,8 @@ class TowerUpdate(BaseModel):
 
 
 class TowerResponse(BaseModel):
-    id: UUID
-    project_id: UUID
+    id: str
+    project_id: str
     name: str
     version: int
     tower_height: float
@@ -140,8 +139,8 @@ class BladeUpdate(BaseModel):
 
 
 class BladeResponse(BaseModel):
-    id: UUID
-    project_id: UUID
+    id: str
+    project_id: str
     name: str
     version: int
     blade_length: float
@@ -178,8 +177,8 @@ class AirfoilUpdate(BaseModel):
 
 
 class AirfoilResponse(BaseModel):
-    id: UUID
-    org_id: UUID
+    id: str
+    org_id: str
     name: str
     family: str | None = None
     thickness_ratio: float | None = None
@@ -214,8 +213,8 @@ class ControllerUpdate(BaseModel):
 
 
 class ControllerResponse(BaseModel):
-    id: UUID
-    project_id: UUID
+    id: str
+    project_id: str
     name: str
     version: int
     controller_type: str
@@ -235,9 +234,9 @@ class ControllerResponse(BaseModel):
 # ---------------------------------------------------------------------------
 class TurbineModelCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    tower_id: UUID | None = None
-    blade_id: UUID | None = None
-    controller_id: UUID | None = None
+    tower_id: str | None = None
+    blade_id: str | None = None
+    controller_id: str | None = None
     gearbox_ratio: float | None = None
     generator_inertia: float | None = None
     drivetrain_stiffness: float | None = None
@@ -258,9 +257,9 @@ class TurbineModelCreate(BaseModel):
 
 class TurbineModelUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
-    tower_id: UUID | None = None
-    blade_id: UUID | None = None
-    controller_id: UUID | None = None
+    tower_id: str | None = None
+    blade_id: str | None = None
+    controller_id: str | None = None
     gearbox_ratio: float | None = None
     generator_inertia: float | None = None
     drivetrain_stiffness: float | None = None
@@ -280,13 +279,13 @@ class TurbineModelUpdate(BaseModel):
 
 
 class TurbineModelResponse(BaseModel):
-    id: UUID
-    project_id: UUID
+    id: str
+    project_id: str
     name: str
     version: int
-    tower_id: UUID | None = None
-    blade_id: UUID | None = None
-    controller_id: UUID | None = None
+    tower_id: str | None = None
+    blade_id: str | None = None
+    controller_id: str | None = None
     gearbox_ratio: float | None = None
     generator_inertia: float | None = None
     drivetrain_stiffness: float | None = None

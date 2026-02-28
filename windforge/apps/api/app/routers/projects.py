@@ -1,6 +1,5 @@
 """Project CRUD endpoints."""
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -17,7 +16,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 # ---- helpers ---------------------------------------------------------------
 async def _get_project_or_404(
-    project_id: UUID, org_id: UUID, db: AsyncSession
+    project_id: str, org_id: str, db: AsyncSession
 ) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
@@ -65,7 +64,7 @@ async def create_project(
 # ---- GET /{id} -------------------------------------------------------------
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -77,7 +76,7 @@ async def get_project(
 # ---- PATCH /{id} -----------------------------------------------------------
 @router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(
-    project_id: UUID,
+    project_id: str,
     body: ProjectUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -97,7 +96,7 @@ async def update_project(
 # ---- DELETE /{id} ----------------------------------------------------------
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

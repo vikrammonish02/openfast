@@ -6,13 +6,42 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from passlib.context import CryptContext
+from sqlalchemy import select
 
 from app.config import settings
-from app.database import engine
+from app.database import async_session_factory, create_tables, engine
 from app.routers import auth, blades, controllers, files, projects, templates, towers, turbine_models, websocket
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+async def _seed_default_user():
+    """Create default admin user and org on first launch (desktop mode)."""
+    from app.models.user import Organization, User, UserRole
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(User).limit(1))
+        if result.scalar_one_or_none() is not None:
+            return  # Users already exist
+
+        logger.info("First launch — creating default admin user")
+        org = Organization(name="WindForge Desktop")
+        session.add(org)
+        await session.flush()
+
+        user = User(
+            email="admin@windforge.app",
+            hashed_password=_pwd_ctx.hash("windforge"),
+            full_name="Admin",
+            org_id=org.id,
+            role=UserRole.ADMIN,
+        )
+        session.add(user)
+        await session.commit()
+        logger.info("Default user created: admin@windforge.app")
 
 
 @asynccontextmanager
@@ -35,6 +64,18 @@ async def lifespan(app: FastAPI):
     projects_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Projects directory: %s", projects_dir)
 
+    # In desktop mode, create tables and seed default user
+    if settings.DESKTOP_MODE:
+        logger.info("Desktop mode enabled — using SQLite, auto-creating tables")
+        # Import all models so Base.metadata knows about them
+        import app.models.components  # noqa: F401
+        import app.models.project  # noqa: F401
+        import app.models.simulation  # noqa: F401
+        import app.models.user  # noqa: F401
+
+        await create_tables()
+        await _seed_default_user()
+
     yield
 
     # ---- shutdown ----
@@ -44,7 +85,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="WindForge API",
-    description="Wind turbine design SaaS powered by OpenFAST",
+    description="Wind turbine design platform powered by OpenFAST",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -96,6 +137,18 @@ async def health():
         "service": "windforge-api",
         "status": "healthy",
         "version": "0.1.0",
-        "database": settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else "configured",
+        "database": settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else "sqlite",
         "openfast_lib": settings.OPENFAST_LIB_PATH,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Desktop mode config endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/v1/config", tags=["config"])
+async def get_config():
+    """Return app configuration for the frontend."""
+    return {
+        "desktop_mode": settings.DESKTOP_MODE,
+        "version": "0.1.0",
     }

@@ -17,7 +17,7 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import Plot from 'react-plotly.js';
-import apiClient from '@/api/client';
+import apiClient, { getWsBaseUrl } from '@/api/client';
 import StatusBadge from '@/components/common/StatusBadge';
 import ProgressBar from '@/components/common/ProgressBar';
 
@@ -262,7 +262,7 @@ export default function SimulationRunner() {
       return;
     }
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/${selectedSimId}`);
+    const ws = new WebSocket(`${getWsBaseUrl()}/ws/${selectedSimId}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

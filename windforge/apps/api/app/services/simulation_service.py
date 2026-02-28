@@ -14,8 +14,6 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import UUID
-
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -193,12 +191,12 @@ async def _persist_aggregated_results(sim: Simulation, db) -> None:
 # ---------------------------------------------------------------------------
 
 # Keep backward compat alias
-async def run_file_generation(simulation_id: UUID, project_id: UUID) -> None:
+async def run_file_generation(simulation_id: str, project_id: str) -> None:
     """Alias for run_simulation_pipeline (backward compat)."""
     return await run_simulation_pipeline(simulation_id, project_id)
 
 
-async def run_simulation_pipeline(simulation_id: UUID, project_id: UUID) -> None:
+async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
     """Background task: generate files → run TurbSim → run OpenFAST → persist results.
 
     Runs as an asyncio task kicked off by start_simulation().
@@ -616,13 +614,14 @@ def _build_turbine_model_dc(
                 flp_stff=s.get("flap_stiff", s.get("flapwise_stiffness_Nm2", 0)),
                 edg_stff=s.get("edge_stiff", s.get("edgewise_stiffness_Nm2", 0)),
             ))
-        # ElastoDynBladeConfig fields: n_bl_inp_st, bld_flex_l, bld_flp_dmp, bld_edg_dmp
+        # ElastoDynBladeConfig fields: n_bl_inp_st, bld_flex_l, bld_fl_dmp_1/2, bld_ed_dmp_1
         # Mode shapes: flp_mode_1, flp_mode_2, edg_mode_1 (5 coefficients each)
         blade_config = ElastoDynBladeConfig(
             n_bl_inp_st=len(blade_stations),
             bld_flex_l=blade.blade_length,
-            bld_flp_dmp=blade.blade_flap_damping,
-            bld_edg_dmp=blade.blade_edge_damping,
+            bld_fl_dmp_1=blade.blade_flap_damping,
+            bld_fl_dmp_2=blade.blade_flap_damping,
+            bld_ed_dmp_1=blade.blade_edge_damping,
             stations=blade_stations,
             flp_mode_1=_mode_coeffs(blade.flap_mode_1_coeffs, [0.0622, 1.7254, -3.2452, 4.7131, -2.2555]),
             flp_mode_2=_mode_coeffs(blade.flap_mode_2_coeffs, [-0.5809, 1.2067, -15.5349, 29.7347, -13.8255]),
@@ -668,7 +667,7 @@ def _build_turbine_model_dc(
     servodyn_config = None
     discon_config = None
     if controller:
-        dll_filename = controller.dll_filename or "libdiscon.so"
+        dll_filename = controller.dll_filename or settings.ROSCO_LIB_PATH or "libdiscon.dylib"
         dll_procname = controller.dll_procname or "DISCON"
         servodyn_config = ServoDynConfig(
             pc_mode=controller.pcmode,

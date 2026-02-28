@@ -239,10 +239,13 @@ class OpenFASTFileGenerator:
         # ----------------------------------------------------------------
         # 3. ServoDyn files
         # ----------------------------------------------------------------
+        from app.config import settings
         srvd_config = turbine_model.servodyn_config or ServoDynConfig(
             dll_in_file=discon_file,
         )
         srvd_config.dll_in_file = discon_file
+        if not srvd_config.dll_file_name and settings.ROSCO_LIB_PATH:
+            srvd_config.dll_file_name = settings.ROSCO_LIB_PATH
         files[srvd_file] = self._srvd_gen.generate_servodyn_file(srvd_config)
 
         discon_cfg = turbine_model.discon_config or DISCONConfig(

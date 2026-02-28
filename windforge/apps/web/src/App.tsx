@@ -20,6 +20,7 @@ import FileBrowser from '@/routes/project/FileBrowser';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
+  const isDesktopMode = useAuthStore((s) => s.isDesktopMode);
 
   useEffect(() => {
     loadUser();
@@ -27,8 +28,18 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      {/* In desktop mode, redirect login/register to dashboard */}
+      {isDesktopMode ? (
+        <>
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/register" element={<Navigate to="/" replace />} />
+        </>
+      ) : (
+        <>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+        </>
+      )}
       <Route
         path="/"
         element={

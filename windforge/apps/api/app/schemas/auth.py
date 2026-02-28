@@ -1,7 +1,6 @@
 """Authentication / user schemas."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -32,10 +31,10 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     """Public representation of a user."""
 
-    id: UUID
+    id: str
     email: str
     full_name: str
-    org_id: UUID
+    org_id: str
     organization_name: str | None = None
     role: str
     created_at: datetime

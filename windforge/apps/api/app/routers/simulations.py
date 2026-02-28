@@ -3,7 +3,6 @@
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import UUID
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -46,7 +45,7 @@ router = APIRouter(prefix="/projects/{project_id}/simulations", tags=["simulatio
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> Project:
+async def _verify_project(project_id: str, org_id: str, db: AsyncSession) -> Project:
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
@@ -57,7 +56,7 @@ async def _verify_project(project_id: UUID, org_id: UUID, db: AsyncSession) -> P
 
 
 async def _get_simulation_or_404(
-    sim_id: UUID, project_id: UUID, db: AsyncSession
+    sim_id: str, project_id: str, db: AsyncSession
 ) -> Simulation:
     result = await db.execute(
         select(Simulation).where(
@@ -139,7 +138,7 @@ dlc_router = APIRouter(prefix="/projects/{project_id}/dlc-definitions", tags=["d
 
 @dlc_router.post("", response_model=DLCDefinitionResponse, status_code=status.HTTP_201_CREATED)
 async def create_dlc_definition(
-    project_id: UUID,
+    project_id: str,
     body: DLCDefinitionCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -174,7 +173,7 @@ async def create_dlc_definition(
 
 @dlc_router.get("", response_model=list[DLCDefinitionResponse])
 async def list_dlc_definitions(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -189,8 +188,8 @@ async def list_dlc_definitions(
 
 @dlc_router.get("/{dlc_id}", response_model=DLCDefinitionResponse)
 async def get_dlc_definition(
-    project_id: UUID,
-    dlc_id: UUID,
+    project_id: str,
+    dlc_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -208,8 +207,8 @@ async def get_dlc_definition(
 
 @dlc_router.put("/{dlc_id}", response_model=DLCDefinitionResponse)
 async def update_dlc_definition(
-    project_id: UUID,
-    dlc_id: UUID,
+    project_id: str,
+    dlc_id: str,
     body: DLCDefinitionUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -252,8 +251,8 @@ async def update_dlc_definition(
 
 @dlc_router.delete("/{dlc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dlc_definition(
-    project_id: UUID,
-    dlc_id: UUID,
+    project_id: str,
+    dlc_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -276,7 +275,7 @@ async def delete_dlc_definition(
 
 @router.get("", response_model=list[SimulationResponse])
 async def list_simulations(
-    project_id: UUID,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -291,7 +290,7 @@ async def list_simulations(
 
 @router.post("", response_model=SimulationWithProgress, status_code=status.HTTP_201_CREATED)
 async def create_simulation(
-    project_id: UUID,
+    project_id: str,
     body: SimulationCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -337,8 +336,8 @@ async def create_simulation(
 
 @router.get("/{simulation_id}", response_model=SimulationWithProgress)
 async def get_simulation(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -349,8 +348,8 @@ async def get_simulation(
 
 @router.post("/{simulation_id}/start", response_model=SimulationWithProgress)
 async def start_simulation(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -377,8 +376,8 @@ async def start_simulation(
 
 @router.post("/{simulation_id}/cancel", response_model=SimulationWithProgress)
 async def cancel_simulation(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -412,8 +411,8 @@ async def cancel_simulation(
 
 @router.get("/{simulation_id}/cases", response_model=list[SimulationCaseResponse])
 async def list_cases(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -433,8 +432,8 @@ async def list_cases(
     response_model=list[ResultsStatisticsResponse],
 )
 async def get_statistics(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -451,8 +450,8 @@ async def get_statistics(
 
 @router.get("/{simulation_id}/results/del", response_model=list[ResultsDELResponse])
 async def get_del_results(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -470,8 +469,8 @@ async def get_del_results(
     response_model=list[ResultsExtremeResponse],
 )
 async def get_extreme_results(
-    project_id: UUID,
-    simulation_id: UUID,
+    project_id: str,
+    simulation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -489,9 +488,9 @@ async def get_extreme_results(
 # ---------------------------------------------------------------------------
 
 async def _get_case_output_path(
-    simulation_id: UUID,
-    case_id: UUID,
-    project_id: UUID,
+    simulation_id: str,
+    case_id: str,
+    project_id: str,
     db: AsyncSession,
 ) -> tuple[SimulationCase, Path]:
     """Look up a completed SimulationCase and resolve its output file path.
@@ -564,9 +563,9 @@ async def _get_case_output_path(
 
 @router.get("/{simulation_id}/cases/{case_id}/channels")
 async def get_case_channels(
-    project_id: UUID,
-    simulation_id: UUID,
-    case_id: UUID,
+    project_id: str,
+    simulation_id: str,
+    case_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -595,9 +594,9 @@ async def get_case_channels(
 
 @router.get("/{simulation_id}/cases/{case_id}/timeseries")
 async def get_case_timeseries(
-    project_id: UUID,
-    simulation_id: UUID,
-    case_id: UUID,
+    project_id: str,
+    simulation_id: str,
+    case_id: str,
     channels: str = Query(
         ..., description="Comma-separated list of channel names to retrieve"
     ),
