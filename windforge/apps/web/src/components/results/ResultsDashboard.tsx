@@ -1063,7 +1063,9 @@ function TimeSeriesTab({
     }
   };
 
-  // Build Plotly traces from time series data
+  // Build Plotly traces with dual Y-axis support.
+  // First channel → left axis (y), second channel → right axis (y2).
+  // Any additional channels alternate between the two axes.
   const traces = useMemo(() => {
     if (!data || !data.time || !data.channels) return [];
     return selectedChannels
@@ -1074,8 +1076,20 @@ function TimeSeriesTab({
         type: 'scattergl' as const,
         mode: 'lines' as const,
         name: `${ch} (${data.channels[ch].unit})`,
+        yaxis: i % 2 === 0 ? 'y' : 'y2',
         line: { color: TS_LINE_COLORS[i % TS_LINE_COLORS.length], width: 1.5 },
       }));
+  }, [data, selectedChannels]);
+
+  // Axis labels from the selected channels' units
+  const yAxisLabels = useMemo(() => {
+    if (!data || !data.channels) return { left: '', right: '' };
+    const active = selectedChannels.filter((ch) => data.channels[ch]);
+    const leftChs = active.filter((_, i) => i % 2 === 0);
+    const rightChs = active.filter((_, i) => i % 2 === 1);
+    const labelFor = (chs: string[]) =>
+      chs.map((ch) => `${ch} (${data.channels[ch].unit})`).join(' / ');
+    return { left: labelFor(leftChs), right: labelFor(rightChs) };
   }, [data, selectedChannels]);
 
   const displayChannels = channels.length > 0 ? channels : COMMON_CHANNELS;
@@ -1107,11 +1121,19 @@ function TimeSeriesTab({
       <div className="rounded-xl border border-slate-700/50 bg-surface-dark p-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
           Channels
+          {selectedChannels.length >= 2 && (
+            <span className="ml-2 normal-case tracking-normal text-slate-600">
+              (odd = left axis, even = right axis)
+            </span>
+          )}
         </p>
         <div className="flex flex-wrap gap-2">
           {displayChannels.map((ch) => {
             const isSelected = selectedChannels.includes(ch);
             const colorIdx = selectedChannels.indexOf(ch);
+            const axisLabel = isSelected && selectedChannels.length >= 2
+              ? colorIdx % 2 === 0 ? 'L' : 'R'
+              : null;
             return (
               <button
                 key={ch}
@@ -1133,6 +1155,9 @@ function TimeSeriesTab({
                   />
                 )}
                 {ch}
+                {axisLabel && (
+                  <span className="ml-0.5 text-[9px] font-bold opacity-60">{axisLabel}</span>
+                )}
               </button>
             );
           })}
@@ -1155,7 +1180,7 @@ function TimeSeriesTab({
             layout={{
               autosize: true,
               height: 500,
-              margin: { l: 60, r: 20, t: 30, b: 50 },
+              margin: { l: 70, r: yAxisLabels.right ? 70 : 20, t: 30, b: 50 },
               paper_bgcolor: 'rgba(0,0,0,0)',
               plot_bgcolor: 'rgba(15,23,42,0.8)',
               font: { color: '#94a3b8', size: 11 },
@@ -1168,8 +1193,22 @@ function TimeSeriesTab({
                 gridcolor: 'rgba(51,65,85,0.4)',
               },
               yaxis: {
+                title: yAxisLabels.left
+                  ? { text: yAxisLabels.left, font: { size: 11, color: TS_LINE_COLORS[0] } }
+                  : undefined,
                 gridcolor: 'rgba(51,65,85,0.4)',
+                tickfont: { color: TS_LINE_COLORS[0] },
               },
+              yaxis2: yAxisLabels.right
+                ? {
+                    title: { text: yAxisLabels.right, font: { size: 11, color: TS_LINE_COLORS[1] } },
+                    overlaying: 'y' as const,
+                    side: 'right' as const,
+                    gridcolor: 'rgba(51,65,85,0.15)',
+                    tickfont: { color: TS_LINE_COLORS[1] },
+                    showgrid: false,
+                  }
+                : undefined,
               legend: {
                 bgcolor: 'rgba(30,41,59,0.8)',
                 bordercolor: 'rgba(51,65,85,0.5)',

@@ -445,18 +445,21 @@ export default function SimulationRunner() {
     return logEntries.filter((e) => e.level === logFilter);
   }, [logEntries, logFilter]);
 
-  // ---- Plot data ----
+  // ---- Plot data (dual Y-axis: odd channels → left, even channels → right) ----
+  const selectedChannelsArr = useMemo(() => Array.from(selectedChannels), [selectedChannels]);
   const plotTraces = useMemo(() => {
     if (liveData.length === 0) return [];
-    return Array.from(selectedChannels).map((ch) => ({
+    return selectedChannelsArr.map((ch, i) => ({
       x: liveData.map((d) => d.time),
       y: liveData.map((d) => d.channels[ch] ?? 0),
       type: 'scattergl' as const,
       mode: 'lines' as const,
       name: ch,
+      yaxis: i % 2 === 0 ? 'y' : 'y2',
       line: { color: CHANNEL_COLORS[ch] ?? '#888', width: 1.5 },
     }));
-  }, [liveData, selectedChannels]);
+  }, [liveData, selectedChannelsArr]);
+  const hasRightAxis = selectedChannelsArr.length >= 2;
 
   // ---- Sort cases for display ----
   const sortedCases = useMemo(() => {
@@ -723,7 +726,7 @@ export default function SimulationRunner() {
                     layout={{
                       autosize: true,
                       height: 280,
-                      margin: { l: 50, r: 10, t: 10, b: 40 },
+                      margin: { l: 50, r: hasRightAxis ? 50 : 10, t: 10, b: 40 },
                       paper_bgcolor: 'rgba(0,0,0,0)',
                       plot_bgcolor: 'rgba(15,23,42,0.8)',
                       font: { color: '#94a3b8', size: 10 },
@@ -733,9 +736,22 @@ export default function SimulationRunner() {
                         zerolinecolor: 'rgba(51,65,85,0.4)',
                       },
                       yaxis: {
+                        title: selectedChannelsArr[0]
+                          ? { text: selectedChannelsArr[0], font: { size: 9, color: CHANNEL_COLORS[selectedChannelsArr[0]] ?? '#888' } }
+                          : undefined,
                         gridcolor: 'rgba(51,65,85,0.4)',
                         zerolinecolor: 'rgba(51,65,85,0.4)',
                       },
+                      ...(hasRightAxis
+                        ? {
+                            yaxis2: {
+                              title: { text: selectedChannelsArr[1], font: { size: 9, color: CHANNEL_COLORS[selectedChannelsArr[1]] ?? '#888' } },
+                              overlaying: 'y' as const,
+                              side: 'right' as const,
+                              showgrid: false,
+                            },
+                          }
+                        : {}),
                       legend: { orientation: 'h', y: -0.25, font: { size: 9 } },
                       showlegend: true,
                     }}
