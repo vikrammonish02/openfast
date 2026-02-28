@@ -678,7 +678,7 @@ def _build_turbine_model_dc(
             dll_proc_name=dll_procname,
         )
         discon_config = DISCONConfig(
-            we_blade_radius=tm.overhang or 63.0,
+            we_blade_radius=tm.tip_radius or 63.0,
             we_gear_ratio=tm.gearbox_ratio or 97.0,
             vs_rated_gen_pwr=(project.rated_power or 5000.0) * 1000.0,
         )
