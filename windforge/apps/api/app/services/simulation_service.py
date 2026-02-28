@@ -114,6 +114,154 @@ def _run_openfast_sync(fst_file: str, openfast_exe: str) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
+# Reference-based input file preparation
+# ---------------------------------------------------------------------------
+
+# Map template names → reference input deck directories
+_REFERENCE_DECKS: dict[str, str] = {
+    "NREL_5MW": "NREL-5MW",
+    "nrel_5mw": "NREL-5MW",
+    "NREL 5MW Assembly": "NREL-5MW",
+    "NREL 5MW Reference": "NREL-5MW",
+    # Future: "DTU_10MW": "DTU-10MW", "IEA_15MW": "IEA-15MW"
+}
+
+
+def _get_reference_dir(template_name: str | None) -> Path | None:
+    """Return path to a validated reference input deck, or None."""
+    if not template_name:
+        return None
+    deck_name = _REFERENCE_DECKS.get(template_name)
+    if not deck_name:
+        return None
+    ref_dir = Path(__file__).resolve().parent.parent / "openfast" / "reference_inputs" / deck_name
+    if ref_dir.is_dir():
+        return ref_dir
+    return None
+
+
+def _patch_line(text: str, keyword: str, new_value: str) -> str:
+    """Replace the value on a line containing `keyword` in an OpenFAST input file.
+
+    OpenFAST format: ``<value>   <keyword>   - <description>``
+    Finds the line, replaces everything before the keyword with the new value.
+    """
+    import re
+    lines = text.split("\n")
+    pattern = re.compile(
+        r'^(\s*)"?.*?"?\s+(' + re.escape(keyword) + r'\b)',
+        re.IGNORECASE,
+    )
+    for i, line in enumerate(lines):
+        m = pattern.match(line)
+        if m:
+            # Rebuild: new_value + spaces + keyword + rest of original line
+            kw_start = line.lower().index(keyword.lower())
+            lines[i] = f"{new_value:<14s}{line[kw_start:]}"
+            break
+    return "\n".join(lines)
+
+
+def _prepare_case_from_reference(
+    case_dir: Path,
+    ref_dir: Path,
+    case_name: str,
+    wind_speed: float,
+    seed_number: int,
+    yaw_misalignment: float,
+    tmax: float,
+    dt: float,
+    hub_height: float,
+    turbulence_class: str,
+    dll_path: str,
+) -> tuple[list[str], str]:
+    """Copy a validated reference deck and patch per-case parameters.
+
+    Returns (file_list, fst_filename).
+    """
+    from app.openfast.turbsim_generator import (
+        TurbSimConfig,
+        TurbSimGenerator,
+        TurbulenceModel,
+    )
+
+    # 1. Copy entire reference deck into case directory
+    #    (dirs_exist_ok=True so we can re-run without deleting)
+    for item in ref_dir.iterdir():
+        dest = case_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dest)
+
+    # 2. Generate TurbSim input (this is truly case-specific)
+    ts_gen = TurbSimGenerator()
+    ts_filename = f"{case_name}_TurbSim.inp"
+    # Grid must cover from below tower base to above blade tip.
+    # Using 2*hub_height ensures the grid bottom ≈ 0 m (covers full tower)
+    # and the top extends well above the blade tips.
+    grid_h = round(2.0 * hub_height, 1)  # e.g. 90 m hub → 180 m grid
+    grid_w = round(2.0 * hub_height, 1)  # keep square grid
+
+    ts_config = TurbSimConfig(
+        rand_seed1=seed_number,
+        hub_ht=hub_height,
+        grid_height=grid_h,
+        grid_width=grid_w,
+        u_ref=wind_speed,
+        ref_ht=hub_height,
+        analysis_time=tmax + 30.0,
+        iec_turbc=turbulence_class,
+        iec_wind_type="NTM",
+        turb_model=TurbulenceModel.IECKAI,
+    )
+    ts_content = ts_gen.generate_turbsim_input(ts_config)
+    (case_dir / ts_filename).write_text(ts_content, encoding="utf-8")
+
+    # 3. Find the .fst file and rename to case_name
+    fst_files = list(case_dir.glob("*.fst"))
+    if not fst_files:
+        raise FileNotFoundError("No .fst file in reference deck")
+    src_fst = fst_files[0]
+    new_fst_name = f"{case_name}.fst"
+    new_fst = case_dir / new_fst_name
+    if src_fst != new_fst:
+        src_fst.rename(new_fst)
+
+    # 4. Patch the .fst file
+    fst_text = new_fst.read_text(encoding="utf-8")
+    fst_text = _patch_line(fst_text, "TMax", f"{tmax:.4f}")
+    fst_text = _patch_line(fst_text, "DT", f"{dt:.6f}")
+    new_fst.write_text(fst_text, encoding="utf-8")
+
+    # 5. Patch InflowWind — set WindType=3 (TurbSim full-field), point to .bts
+    ifw_files = list(case_dir.glob("*InflowWind*"))
+    if ifw_files:
+        ifw_path = ifw_files[0]
+        ifw_text = ifw_path.read_text(encoding="utf-8")
+        ifw_text = _patch_line(ifw_text, "WindType", "3")
+        bts_name = ts_filename.replace(".inp", ".bts")
+        ifw_text = _patch_line(ifw_text, "FileName_BTS", f'"{bts_name}"')
+        ifw_path.write_text(ifw_text, encoding="utf-8")
+
+    # 6. Patch ServoDyn — set DLL_FileName to absolute path
+    srvd_files = list(case_dir.glob("*ServoDyn*"))
+    if srvd_files and dll_path:
+        srvd_path = srvd_files[0]
+        srvd_text = srvd_path.read_text(encoding="utf-8")
+        srvd_text = _patch_line(srvd_text, "DLL_FileName", f'"{dll_path}"')
+        srvd_path.write_text(srvd_text, encoding="utf-8")
+
+    # Build file list
+    file_list = []
+    for f in sorted(case_dir.rglob("*")):
+        if f.is_file():
+            file_list.append(str(f.relative_to(case_dir)))
+
+    return file_list, new_fst_name
+
+
+# ---------------------------------------------------------------------------
 # Results persistence helpers
 # ---------------------------------------------------------------------------
 
@@ -256,9 +404,22 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                 await db.commit()
                 return
 
-            # 3. Build file generator dataclasses
-            turbine_dc = _build_turbine_model_dc(tm, tower, blade, controller, project)
-            project_dc = _build_project_dc(project)
+            # 3. Determine whether to use validated reference files or custom generators
+            ref_dir = _get_reference_dir(tm.name)
+            use_reference = ref_dir is not None
+            if use_reference:
+                logger.info("Using validated reference deck: %s", ref_dir)
+            else:
+                logger.info("No reference deck for '%s', using custom generators", tm.name)
+
+            # Build file generator dataclasses (needed for fallback generator path)
+            turbine_dc = None
+            project_dc = None
+            generator = None
+            if not use_reference:
+                turbine_dc = _build_turbine_model_dc(tm, tower, blade, controller, project)
+                project_dc = _build_project_dc(project)
+                generator = OpenFASTFileGenerator()
 
             # 4. Create output directory
             base_dir = Path(settings.PROJECTS_DIR) / str(project_id) / "simulations" / str(simulation_id) / "cases"
@@ -272,12 +433,14 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                 binaries["turbsim"], binaries["openfast"], can_execute,
             )
 
-            # 5. Generate files for each case
-            generator = OpenFASTFileGenerator()
+            # 5. Prepare files for each case
             total = len(sim.cases)
             completed = 0
             failed = 0
             case_dirs: dict[str, tuple[SimulationCase, Path, str]] = {}  # case_id → (case, dir, fst_name)
+
+            # Resolve DLL path
+            dll_path = settings.ROSCO_LIB_PATH or ""
 
             # Publish start event
             await publish_event(simulation_id, {
@@ -287,7 +450,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
-            # ── Phase 1: Generate input files ──────────────────────────
+            # ── Phase 1: Prepare input files ──────────────────────────
             for case in sim.cases:
                 try:
                     case_dir_name = (
@@ -298,17 +461,6 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                     )
                     case_dir = base_dir / case_dir_name
                     case_dir.mkdir(parents=True, exist_ok=True)
-
-                    case_dc = SimulationCaseDC(
-                        case_id=case_dir_name,
-                        dlc_number=case.dlc_number,
-                        wind_speed=case.wind_speed,
-                        seed_number=case.seed_number,
-                        yaw_misalignment=case.yaw_misalignment,
-                        simulation_time=630.0,
-                        dt=0.005,
-                        wind_type=3,
-                    )
 
                     case.status = CaseStatus.RUNNING
                     case.started_at = datetime.now(timezone.utc)
@@ -326,20 +478,47 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
 
-                    files = generator.generate_all(turbine_dc, case_dc, project_dc)
-
-                    file_list = []
-                    fst_name = None
-                    for filename, content in files.items():
-                        filepath = case_dir / filename
-                        filepath.parent.mkdir(parents=True, exist_ok=True)
-                        filepath.write_text(content, encoding="utf-8")
-                        file_list.append(filename)
-                        if filename.endswith(".fst"):
-                            fst_name = filename
+                    if use_reference:
+                        # ── Reference-based: copy validated deck + patch ──
+                        file_list, fst_name = _prepare_case_from_reference(
+                            case_dir=case_dir,
+                            ref_dir=ref_dir,
+                            case_name=case_dir_name,
+                            wind_speed=case.wind_speed,
+                            seed_number=case.seed_number,
+                            yaw_misalignment=case.yaw_misalignment,
+                            tmax=project.t_max or 630.0,
+                            dt=project.dt or 0.00625,
+                            hub_height=project.hub_height or 90.0,
+                            turbulence_class=project.turbulence_class or "B",
+                            dll_path=dll_path,
+                        )
+                    else:
+                        # ── Fallback: custom generator (for non-reference turbines) ──
+                        case_dc = SimulationCaseDC(
+                            case_id=case_dir_name,
+                            dlc_number=case.dlc_number,
+                            wind_speed=case.wind_speed,
+                            seed_number=case.seed_number,
+                            yaw_misalignment=case.yaw_misalignment,
+                            simulation_time=project.t_max or 630.0,
+                            dt=project.dt or 0.005,
+                            wind_type=3,
+                        )
+                        files = generator.generate_all(turbine_dc, case_dc, project_dc)
+                        file_list = []
+                        fst_name = None
+                        for filename, content in files.items():
+                            filepath = case_dir / filename
+                            filepath.parent.mkdir(parents=True, exist_ok=True)
+                            filepath.write_text(content, encoding="utf-8")
+                            file_list.append(filename)
+                            if filename.endswith(".fst"):
+                                fst_name = filename
+                        fst_name = fst_name or f"{case_dir_name}.fst"
 
                     case.input_files = {"directory": str(case_dir), "files": file_list}
-                    case_dirs[str(case.id)] = (case, case_dir, fst_name or f"{case_dir_name}.fst")
+                    case_dirs[str(case.id)] = (case, case_dir, fst_name)
                     await db.flush()
 
                     await publish_event(simulation_id, {
