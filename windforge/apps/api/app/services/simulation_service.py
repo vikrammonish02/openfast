@@ -464,7 +464,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
 
                     case.status = CaseStatus.RUNNING
                     case.started_at = datetime.now(timezone.utc)
-                    await db.flush()
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_progress",
@@ -519,7 +519,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
 
                     case.input_files = {"directory": str(case_dir), "files": file_list}
                     case_dirs[str(case.id)] = (case, case_dir, fst_name)
-                    await db.flush()
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_complete",
@@ -536,7 +536,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                     case.error_message = str(e)
                     case.completed_at = datetime.now(timezone.utc)
                     failed += 1
-                    await db.flush()
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_error",
@@ -584,7 +584,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
 
             # ── Phase 2 & 3: TurbSim + OpenFAST execution ─────────────
             sim.status = SimulationStatus.GENERATING_WIND
-            await db.flush()
+            await db.commit()
             loop = asyncio.get_running_loop()
 
             for cid, (case, case_dir, fst_name) in case_dirs.items():
@@ -621,7 +621,7 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                     # Phase 3: OpenFAST
                     sim.status = SimulationStatus.RUNNING
                     case.status = CaseStatus.RUNNING
-                    await db.flush()
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_progress",
@@ -662,7 +662,9 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                         case.completed_at = datetime.now(timezone.utc)
                         failed += 1
 
-                    await db.flush()
+                    sim.completed_cases = completed
+                    sim.failed_cases = failed
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_complete",
@@ -678,7 +680,9 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                     case.error_message = str(e)
                     case.completed_at = datetime.now(timezone.utc)
                     failed += 1
-                    await db.flush()
+                    sim.completed_cases = completed
+                    sim.failed_cases = failed
+                    await db.commit()
 
                     await publish_event(simulation_id, {
                         "type": "case_error",
