@@ -16,6 +16,8 @@ const TABS = [
   { key: 'polar', label: 'Polar Viewer' },
   { key: 'correction3d', label: '3D Correction' },
   { key: 'naca', label: 'NACA Generator' },
+  { key: 'dynstall', label: 'Dynamic Stall Sim' },
+  { key: 'wagner', label: 'Wagner Function' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -55,6 +57,19 @@ interface NACAResult {
   x: number[];
   y_upper: number[];
   y_lower: number[];
+}
+
+interface DynStallSimResult {
+  time: number[];
+  alpha_dynamic: number[];
+  cl_static: number[];
+  cl_oye: number[];
+}
+
+interface WagnerResult {
+  s: number[];
+  phi_jones: number[];
+  phi_openfast: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +140,22 @@ export default function AirfoilToolsPage() {
   const [nacaNPoints, setNacaNPoints] = useState(100);
   const [nacaResult, setNacaResult] = useState<NACAResult | null>(null);
   const [nacaLoading, setNacaLoading] = useState(false);
+
+  // --- Dynamic Stall Simulation state ---
+  const [dsMeanAlpha, setDsMeanAlpha] = useState(8);
+  const [dsAmplitude, setDsAmplitude] = useState(6);
+  const [dsFreq, setDsFreq] = useState(1);
+  const [dsU0, setDsU0] = useState(10);
+  const [dsChord, setDsChord] = useState(1);
+  const [dsNCycles, setDsNCycles] = useState(4);
+  const [dsResult, setDsResult] = useState<DynStallSimResult | null>(null);
+  const [dsLoading, setDsLoading] = useState(false);
+
+  // --- Wagner Function state ---
+  const [wagSMax, setWagSMax] = useState(30);
+  const [wagNPoints, setWagNPoints] = useState(500);
+  const [wagResult, setWagResult] = useState<WagnerResult | null>(null);
+  const [wagLoading, setWagLoading] = useState(false);
 
   // General error
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +251,65 @@ export default function AirfoilToolsPage() {
       setNacaLoading(false);
     }
   }, [projectId, nacaDigits, nacaNPoints]);
+
+  const handleDynStallSim = useCallback(async () => {
+    if (!projectId || !selectedAirfoilId) return;
+    setDsLoading(true);
+    setError(null);
+    setDsResult(null);
+    try {
+      // First get the polar data for the selected airfoil
+      const polarRes = await api.post<PolarAnalysisResult>(
+        `/projects/${projectId}/airfoil-tools/analyze`,
+        { airfoil_id: selectedAirfoilId },
+      );
+      // Then run dynamic stall sim with the polar data
+      const res = await api.post<DynStallSimResult>(
+        `/projects/${projectId}/airfoil-tools/dynamic-stall-sim`,
+        {
+          alpha: polarRes.data.alpha_deg,
+          cl: polarRes.data.cl,
+          cd: polarRes.data.cd,
+          cm: polarRes.data.cm,
+          chord: dsChord,
+          U0: dsU0,
+          mean_alpha_deg: dsMeanAlpha,
+          amplitude_deg: dsAmplitude,
+          freq: dsFreq,
+          n_cycles: dsNCycles,
+        },
+      );
+      setDsResult(res.data);
+      toast.success('Dynamic stall simulated');
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Dynamic stall simulation failed';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setDsLoading(false);
+    }
+  }, [projectId, selectedAirfoilId, dsMeanAlpha, dsAmplitude, dsFreq, dsU0, dsChord, dsNCycles]);
+
+  const handleWagner = useCallback(async () => {
+    if (!projectId) return;
+    setWagLoading(true);
+    setError(null);
+    setWagResult(null);
+    try {
+      const res = await api.post<WagnerResult>(
+        `/projects/${projectId}/airfoil-tools/wagner`,
+        { s_max: wagSMax, n_points: wagNPoints },
+      );
+      setWagResult(res.data);
+      toast.success('Wagner function computed');
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Wagner computation failed';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setWagLoading(false);
+    }
+  }, [projectId, wagSMax, wagNPoints]);
 
   // ── Polar Viewer chart data ────────────────────────────────────────────
 
@@ -398,6 +488,85 @@ export default function AirfoilToolsPage() {
     [nacaResult, nacaDigits],
   );
 
+  // ── Dynamic Stall Sim chart data ───────────────────────────────────────
+
+  const dsHysteresisTraces = useMemo(() => {
+    if (!dsResult) return [];
+    return [
+      {
+        x: dsResult.alpha_dynamic,
+        y: dsResult.cl_static,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'Quasi-static Cl',
+        line: { color: '#94a3b8', width: 1.5, dash: 'dash' as const },
+      },
+      {
+        x: dsResult.alpha_dynamic,
+        y: dsResult.cl_oye,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'Dynamic Cl (Oye)',
+        line: { color: '#22d3ee', width: 2 },
+      },
+    ];
+  }, [dsResult]);
+
+  const dsTimeTraces = useMemo(() => {
+    if (!dsResult) return [];
+    return [
+      {
+        x: dsResult.time,
+        y: dsResult.alpha_dynamic,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: '\u03b1(t)',
+        yaxis: 'y2',
+        line: { color: '#f59e0b', width: 1.5, dash: 'dot' as const },
+      },
+      {
+        x: dsResult.time,
+        y: dsResult.cl_static,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'Cl static',
+        line: { color: '#94a3b8', width: 1.5, dash: 'dash' as const },
+      },
+      {
+        x: dsResult.time,
+        y: dsResult.cl_oye,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'Cl Oye',
+        line: { color: '#22d3ee', width: 2 },
+      },
+    ];
+  }, [dsResult]);
+
+  // ── Wagner chart data ──────────────────────────────────────────────────
+
+  const wagnerTraces = useMemo(() => {
+    if (!wagResult) return [];
+    return [
+      {
+        x: wagResult.s,
+        y: wagResult.phi_jones,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'Jones approx.',
+        line: { color: '#22d3ee', width: 2 },
+      },
+      {
+        x: wagResult.s,
+        y: wagResult.phi_openfast,
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: 'OpenFAST constants',
+        line: { color: '#f97316', width: 2, dash: 'dash' as const },
+      },
+    ];
+  }, [wagResult]);
+
   const plotConfig = {
     displaylogo: false,
     responsive: true,
@@ -422,18 +591,18 @@ export default function AirfoilToolsPage() {
       <div>
         <h2 className="text-xl font-bold text-slate-100">Airfoil Tools</h2>
         <p className="text-sm text-slate-400">
-          Polar analysis, 3D rotational corrections, and NACA airfoil generation
+          Polar analysis, 3D corrections, NACA generation, dynamic stall simulation, and Wagner function
         </p>
       </div>
 
       {/* Sub-tab navigation */}
-      <div className="flex gap-1 rounded-lg bg-surface-dark-secondary border border-slate-700 p-1">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-surface-dark-secondary border border-slate-700 p-1">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={clsx(
-              'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-all',
+              'flex-1 min-w-[120px] rounded-md px-3 py-2 text-sm font-medium transition-all',
               activeTab === tab.key
                 ? 'bg-accent-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800',
@@ -754,6 +923,206 @@ export default function AirfoilToolsPage() {
                   layout={nacaLayout as any}
                   config={plotConfig}
                   style={{ width: '100%', height: '400px' }}
+                  useResizeHandler
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ──────────────── Dynamic Stall Simulation Tab ──────────────── */}
+      {activeTab === 'dynstall' && (
+        <div className="space-y-6">
+          <div className="border border-slate-700 bg-surface-dark-secondary rounded-xl p-6">
+            <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">
+              Dynamic Stall Simulation (Oye Model)
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Simulates the Cl hysteresis loop during pitching oscillation using the Oye dynamic stall model.
+              Requires an airfoil with polar data.
+            </p>
+
+            {airfoilStations.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-600 py-12">
+                <Feather className="h-10 w-10 text-slate-300 mb-3" />
+                <p className="text-sm text-slate-400">
+                  No airfoils found. Define aero stations on a blade first.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Airfoil</label>
+                    <select
+                      value={selectedAirfoilId}
+                      onChange={(e) => setSelectedAirfoilId(e.target.value)}
+                      className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none"
+                    >
+                      {airfoilStations.map((station) => (
+                        <option key={station.id} value={station.id}>{station.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Mean AoA <span className="text-slate-500">(deg)</span>
+                    </label>
+                    <input type="number" value={dsMeanAlpha} onChange={(e) => setDsMeanAlpha(Number(e.target.value))}
+                      step={1} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Amplitude <span className="text-slate-500">(deg)</span>
+                    </label>
+                    <input type="number" value={dsAmplitude} onChange={(e) => setDsAmplitude(Number(e.target.value))}
+                      step={1} min={0.5} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Frequency <span className="text-slate-500">(Hz)</span>
+                    </label>
+                    <input type="number" value={dsFreq} onChange={(e) => setDsFreq(Number(e.target.value))}
+                      step={0.5} min={0.1} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Freestream U0 <span className="text-slate-500">(m/s)</span>
+                    </label>
+                    <input type="number" value={dsU0} onChange={(e) => setDsU0(Number(e.target.value))}
+                      step={1} min={1} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Chord <span className="text-slate-500">(m)</span>
+                    </label>
+                    <input type="number" value={dsChord} onChange={(e) => setDsChord(Number(e.target.value))}
+                      step={0.1} min={0.1} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Cycles</label>
+                    <input type="number" value={dsNCycles} onChange={(e) => setDsNCycles(Number(e.target.value))}
+                      step={1} min={1} max={20} className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleDynStallSim}
+                  disabled={dsLoading || !selectedAirfoilId}
+                  className="px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {dsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  Simulate Dynamic Stall
+                </button>
+              </div>
+            )}
+          </div>
+
+          {dsResult && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="border border-slate-700 bg-surface-dark-secondary rounded-xl p-6">
+                <div className="min-h-[450px]">
+                  <Plot
+                    data={dsHysteresisTraces as any}
+                    layout={{
+                      ...basePlotLayout,
+                      title: { text: 'Cl vs \u03b1 Hysteresis Loop', font: { size: 12, color: '#e2e8f0' } },
+                      xaxis: { title: '\u03b1 (deg)', ...gridStyle },
+                      yaxis: { title: 'Cl', ...gridStyle },
+                    } as any}
+                    config={plotConfig}
+                    style={{ width: '100%', height: '450px' }}
+                    useResizeHandler
+                  />
+                </div>
+              </div>
+              <div className="border border-slate-700 bg-surface-dark-secondary rounded-xl p-6">
+                <div className="min-h-[450px]">
+                  <Plot
+                    data={dsTimeTraces as any}
+                    layout={{
+                      ...basePlotLayout,
+                      title: { text: 'Cl & \u03b1 vs Time', font: { size: 12, color: '#e2e8f0' } },
+                      xaxis: { title: 'Time (s)', ...gridStyle },
+                      yaxis: { title: 'Cl', ...gridStyle },
+                      yaxis2: { title: '\u03b1 (deg)', overlaying: 'y', side: 'right', ...gridStyle },
+                    } as any}
+                    config={plotConfig}
+                    style={{ width: '100%', height: '450px' }}
+                    useResizeHandler
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ──────────────── Wagner Function Tab ──────────────── */}
+      {activeTab === 'wagner' && (
+        <div className="space-y-6">
+          <div className="border border-slate-700 bg-surface-dark-secondary rounded-xl p-6">
+            <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">
+              Wagner Indicial Lift Function
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              The Wagner function describes the transient lift buildup after an impulsive change in angle of attack.
+              Two approximations are compared: Jones (1938) and OpenFAST constants.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Max semi-chords (s)
+                </label>
+                <input type="number" value={wagSMax} onChange={(e) => setWagSMax(Number(e.target.value))}
+                  step={5} min={5} max={100}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Points: {wagNPoints}
+                </label>
+                <input type="range" min={100} max={2000} value={wagNPoints}
+                  onChange={(e) => setWagNPoints(Number(e.target.value))}
+                  className="w-full accent-accent-500" />
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>100</span><span>500</span><span>1000</span><span>2000</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleWagner}
+              disabled={wagLoading}
+              className="px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {wagLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Compute Wagner Function
+            </button>
+          </div>
+
+          {wagResult && (
+            <div className="border border-slate-700 bg-surface-dark-secondary rounded-xl p-6">
+              <div className="min-h-[450px]">
+                <Plot
+                  data={wagnerTraces as any}
+                  layout={{
+                    ...basePlotLayout,
+                    title: { text: 'Wagner Indicial Lift Function \u03c6(s)', font: { size: 12, color: '#e2e8f0' } },
+                    xaxis: { title: 'Semi-chord travel s = 2Ut/c', ...gridStyle },
+                    yaxis: { title: '\u03c6(s)', ...gridStyle, range: [0, 1.05] },
+                    annotations: [{
+                      x: Math.max(...wagResult.s) * 0.7,
+                      y: 0.5,
+                      text: '\u03c6(0) = 0.5,  \u03c6(\u221e) \u2192 1',
+                      showarrow: false,
+                      font: { size: 10, color: '#94a3b8' },
+                    }],
+                  } as any}
+                  config={plotConfig}
+                  style={{ width: '100%', height: '450px' }}
                   useResizeHandler
                 />
               </div>
