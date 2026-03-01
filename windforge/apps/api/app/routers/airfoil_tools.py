@@ -25,17 +25,23 @@ from app.schemas.airfoil_tools import (
     Correction3DResponse,
     DynamicStallRequest,
     DynamicStallResponse,
+    DynStallSimRequest,
+    DynStallSimResponse,
     NacaRequest,
     NacaResponse,
     PolarAnalysisByIdRequest,
     PolarAnalysisByIdResponse,
     PolarAnalysisRequest,
     PolarAnalysisResponse,
+    WagnerRequest,
+    WagnerResponse,
 )
 from app.services.airfoil_service import (
     analyze_polar,
     apply_3d_correction,
     compute_dynamic_stall_params,
+    compute_dynamic_stall_simulation,
+    compute_wagner_response,
     generate_naca_profile,
 )
 
@@ -297,3 +303,55 @@ async def generate_naca(
     )
 
     return NacaResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic stall simulation (Cl-α hysteresis)
+# ---------------------------------------------------------------------------
+@router.post("/dynamic-stall-sim", response_model=DynStallSimResponse)
+async def dynamic_stall_sim(
+    project_id: str,
+    body: DynStallSimRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Simulate dynamic stall hysteresis loop (Oye model)."""
+    await _verify_project(project_id, current_user.org_id, db)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: compute_dynamic_stall_simulation(
+            alpha=body.alpha, cl=body.cl, cd=body.cd, cm=body.cm,
+            chord=body.chord, U0=body.U0,
+            mean_alpha_deg=body.mean_alpha_deg,
+            amplitude_deg=body.amplitude_deg,
+            freq=body.freq, n_cycles=body.n_cycles,
+        ),
+    )
+
+    return DynStallSimResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Wagner indicial lift function
+# ---------------------------------------------------------------------------
+@router.post("/wagner", response_model=WagnerResponse)
+async def wagner_response(
+    project_id: str,
+    body: WagnerRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute Wagner indicial lift function (Jones vs OpenFAST)."""
+    await _verify_project(project_id, current_user.org_id, db)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: compute_wagner_response(
+            s_max=body.s_max, n_points=body.n_points,
+        ),
+    )
+
+    return WagnerResponse(**result)

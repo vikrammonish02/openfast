@@ -146,3 +146,48 @@ class NacaResponse(BaseModel):
     x: list[float]
     y_upper: list[float]
     y_lower: list[float]
+
+
+# ---------------------------------------------------------------------------
+# Dynamic stall simulation
+# ---------------------------------------------------------------------------
+class DynStallSimRequest(BaseModel):
+    """Request for dynamic stall time-domain simulation."""
+
+    alpha: list[float] = Field(..., description="Angle of attack (deg)")
+    cl: list[float] = Field(..., description="Lift coefficient array")
+    cd: list[float] = Field(..., description="Drag coefficient array")
+    cm: list[float] | None = Field(default=None, description="Moment coefficient array")
+    chord: float = Field(default=1.0, gt=0, description="Chord length (m)")
+    U0: float = Field(default=10.0, gt=0, description="Freestream velocity (m/s)")
+    mean_alpha_deg: float = Field(default=8.0, description="Mean AoA (deg)")
+    amplitude_deg: float = Field(default=6.0, gt=0, description="Oscillation amplitude (deg)")
+    freq: float = Field(default=1.0, gt=0, description="Oscillation frequency (Hz)")
+    n_cycles: int = Field(default=4, ge=1, le=20, description="Number of cycles")
+
+
+class DynStallSimResponse(BaseModel):
+    """Response for dynamic stall simulation."""
+
+    time: list[float]
+    alpha_dynamic: list[float]
+    cl_static: list[float]
+    cl_oye: list[float]
+
+
+# ---------------------------------------------------------------------------
+# Wagner function
+# ---------------------------------------------------------------------------
+class WagnerRequest(BaseModel):
+    """Request for Wagner indicial lift response."""
+
+    s_max: float = Field(default=30.0, gt=0, description="Max semi-chord travel")
+    n_points: int = Field(default=500, ge=50, le=2000, description="Number of points")
+
+
+class WagnerResponse(BaseModel):
+    """Response for Wagner function."""
+
+    s: list[float]
+    phi_jones: list[float]
+    phi_openfast: list[float]

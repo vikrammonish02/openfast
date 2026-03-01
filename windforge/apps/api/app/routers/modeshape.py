@@ -13,16 +13,23 @@ from app.models.components import Blade, Tower, TurbineModel
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.modeshape import (
+    BeamTheoryModeData,
+    BeamTheoryRequest,
+    BeamTheoryResponse,
     DeflectionRequest,
     DeflectionResponse,
+    FemCompareRequest,
+    FemCompareResponse,
     ModeData,
     ModeShapeRequest,
     ModeShapeResponse,
 )
 from app.services.modeshape_service import (
+    compare_fem_vs_theory,
     compute_blade_mode_shapes,
     compute_static_deflection,
     compute_tower_mode_shapes,
+    compute_uniform_beam_modes,
 )
 
 logger = logging.getLogger("windforge.modeshape")
@@ -224,4 +231,68 @@ async def compute_deflection(
     return DeflectionResponse(
         span_positions=result["span_positions"],
         deflection=result["deflection"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Uniform beam theory modes (no turbine model needed)
+# ---------------------------------------------------------------------------
+@router.post("/beam-theory", response_model=BeamTheoryResponse)
+async def beam_theory_modes(
+    project_id: str,
+    body: BeamTheoryRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute analytical uniform beam bending modes for various BCs."""
+    await _verify_project(project_id, current_user.org_id, db)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: compute_uniform_beam_modes(
+            BC_type=body.BC_type, EI=body.EI, rho=body.rho,
+            A=body.A, L=body.L, n_modes=body.n_modes, Mtop=body.Mtop,
+        ),
+    )
+
+    modes = [BeamTheoryModeData(**m) for m in result["modes"]]
+    return BeamTheoryResponse(
+        x=result["x"],
+        frequencies=result["frequencies"],
+        modes=modes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FEM vs Theory comparison
+# ---------------------------------------------------------------------------
+@router.post("/fem-compare", response_model=FemCompareResponse)
+async def fem_compare(
+    project_id: str,
+    body: FemCompareRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare FEM and analytical beam mode shapes."""
+    await _verify_project(project_id, current_user.org_id, db)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: compare_fem_vs_theory(
+            EI=body.EI, rho=body.rho, A=body.A, L=body.L,
+            n_modes=body.n_modes, n_elements=body.n_elements,
+        ),
+    )
+
+    modes_theory = [BeamTheoryModeData(**m) for m in result["modes_theory"]]
+    modes_fem = [BeamTheoryModeData(**m) for m in result["modes_fem"]]
+    return FemCompareResponse(
+        x_theory=result["x_theory"],
+        x_fem=result["x_fem"],
+        frequencies_theory=result["frequencies_theory"],
+        frequencies_fem=result["frequencies_fem"],
+        modes_theory=modes_theory,
+        modes_fem=modes_fem,
     )

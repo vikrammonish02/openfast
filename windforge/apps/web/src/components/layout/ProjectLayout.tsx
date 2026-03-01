@@ -18,6 +18,11 @@ import {
   Spline,
   CloudRain,
   Feather,
+  Target,
+  Orbit,
+  Shuffle,
+  Waves,
+  Atom,
 } from 'lucide-react';
 
 const tabs = [
@@ -25,11 +30,16 @@ const tabs = [
   { path: 'blade', label: 'Blade', icon: Fan },
   { path: 'controller', label: 'Controller', icon: Gauge },
   { path: 'assembly', label: 'Assembly', icon: Boxes },
+  { path: 'bem', label: 'BEM & Rotor', icon: Target },
   { path: 'campbell', label: 'Frequencies', icon: Activity },
   { path: 'hydro', label: 'Hydro', icon: Droplets },
   { path: 'modeshapes', label: 'Mode Shapes', icon: Spline },
   { path: 'wind', label: 'Wind', icon: CloudRain },
   { path: 'airfoils', label: 'Airfoils', icon: Feather },
+  { path: 'dynamics', label: 'Dynamics', icon: Orbit },
+  { path: 'stochastic', label: 'Stochastic', icon: Shuffle },
+  { path: 'potential-flow', label: 'Potential Flow', icon: Waves },
+  { path: 'particles', label: 'Particles', icon: Atom },
   { path: 'dlc', label: 'DLC', icon: Table2 },
   { path: 'simulate', label: 'Simulate', icon: Play },
   { path: 'results', label: 'Results', icon: BarChart3 },

@@ -24,6 +24,11 @@ import HydroPage from '@/routes/project/HydroPage';
 import ModeShapePage from '@/routes/project/ModeShapePage';
 import WindEnvironmentPage from '@/routes/project/WindEnvironmentPage';
 import AirfoilToolsPage from '@/routes/project/AirfoilToolsPage';
+import BemRotorPage from '@/routes/project/BemRotorPage';
+import DynamicsPage from '@/routes/project/DynamicsPage';
+import StochasticPage from '@/routes/project/StochasticPage';
+import PotentialFlowPage from '@/routes/project/PotentialFlowPage';
+import ParticleDynamicsPage from '@/routes/project/ParticleDynamicsPage';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
@@ -63,11 +68,16 @@ function App() {
           <Route path="blade" element={<BladeDesigner />} />
           <Route path="controller" element={<ControllerDesigner />} />
           <Route path="assembly" element={<TurbineAssembly />} />
+          <Route path="bem" element={<BemRotorPage />} />
           <Route path="campbell" element={<CampbellDiagram />} />
           <Route path="hydro" element={<HydroPage />} />
           <Route path="modeshapes" element={<ModeShapePage />} />
           <Route path="wind" element={<WindEnvironmentPage />} />
           <Route path="airfoils" element={<AirfoilToolsPage />} />
+          <Route path="dynamics" element={<DynamicsPage />} />
+          <Route path="stochastic" element={<StochasticPage />} />
+          <Route path="potential-flow" element={<PotentialFlowPage />} />
+          <Route path="particles" element={<ParticleDynamicsPage />} />
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />

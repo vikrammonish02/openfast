@@ -32,6 +32,8 @@ if not hasattr(np, "trapezoid"):
 from welib.beams.cantilever1d import compute_modes as _compute_modes_1d
 from welib.beams.cantilever1d import deflection as _deflection_1d
 from welib.beams.cantilever2d import compute_modes as _compute_modes_2d
+from welib.beams.theory import UniformBeamBendingModes
+from welib.FEM.fem_beam import cbeam
 
 logger = logging.getLogger("windforge.modeshape")
 
@@ -218,3 +220,163 @@ def compute_static_deflection(
         "span_positions": span_positions,
         "deflection": u.tolist(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Uniform beam bending modes (analytical theory)
+# ---------------------------------------------------------------------------
+def compute_uniform_beam_modes(
+    BC_type: str = "unloaded-clamped-free",
+    EI: float = 2.1e8,
+    rho: float = 7850.0,
+    A: float = 0.01,
+    L: float = 10.0,
+    n_modes: int = 4,
+    Mtop: float = 0.0,
+) -> dict:
+    """Compute analytical mode shapes for a uniform Euler-Bernoulli beam.
+
+    Uses welib.beams.theory.UniformBeamBendingModes.
+
+    Parameters
+    ----------
+    BC_type : str
+        Boundary condition string, e.g. 'unloaded-clamped-free',
+        'unloaded-clamped-clamped', 'unloaded-hinged-hinged', etc.
+    EI : float
+        Flexural rigidity (Nm^2).
+    rho : float
+        Density (kg/m^3).
+    A : float
+        Cross-sectional area (m^2).
+    L : float
+        Beam length (m).
+    n_modes : int
+        Number of modes to compute.
+    Mtop : float
+        Tip mass (kg), only for 'unloaded-topmass-clamped-free'.
+
+    Returns
+    -------
+    dict with keys: x, frequencies, modes (list of {label, shape_values})
+    """
+    try:
+        freq, x, ModesU, ModesV, ModesK = UniformBeamBendingModes(
+            BC_type, EI=EI, rho=rho, A=A, L=L,
+            nModes=n_modes, Mtop=Mtop,
+        )
+
+        modes = []
+        for i in range(len(freq)):
+            modes.append({
+                "frequency": float(freq[i]),
+                "label": f"Mode {i + 1}",
+                "shape_values": ModesU[i].tolist(),
+            })
+
+        return {
+            "x": (x / L).tolist(),  # normalize to 0..1
+            "frequencies": freq.tolist(),
+            "modes": modes,
+        }
+    except Exception as exc:
+        logger.warning("Uniform beam modes failed: %s", exc)
+        return {
+            "x": [],
+            "frequencies": [],
+            "modes": [],
+        }
+
+
+# ---------------------------------------------------------------------------
+# FEM vs Theory comparison
+# ---------------------------------------------------------------------------
+def compare_fem_vs_theory(
+    EI: float = 2.1e8,
+    rho: float = 7850.0,
+    A: float = 0.01,
+    L: float = 10.0,
+    n_modes: int = 4,
+    n_elements: int = 20,
+) -> dict:
+    """Compare FEM and analytical beam mode shapes side by side.
+
+    Uses welib.FEM.fem_beam.cbeam and welib.beams.theory.UniformBeamBendingModes.
+
+    Returns
+    -------
+    dict with keys: x_theory, x_fem, frequencies_theory, frequencies_fem,
+                    modes_theory, modes_fem
+    """
+    try:
+        # --- Analytical ---
+        freq_th, x_th, ModesU_th, _, _ = UniformBeamBendingModes(
+            "unloaded-clamped-free", EI=EI, rho=rho, A=A, L=L, nModes=n_modes,
+        )
+
+        modes_theory = []
+        for i in range(len(freq_th)):
+            modes_theory.append({
+                "frequency": float(freq_th[i]),
+                "label": f"Theory Mode {i + 1}",
+                "shape_values": ModesU_th[i].tolist(),
+            })
+
+        # --- FEM ---
+        m_per_l = rho * A  # mass per unit length
+        x_fem_nodes = np.linspace(0, L, n_elements + 1)
+        m_arr = np.full(n_elements + 1, m_per_l)
+        EI_arr = np.full(n_elements + 1, EI)
+        EA_val = 2.1e11 * A  # approx steel E=211 GPa
+
+        FEM = cbeam(
+            x_fem_nodes, m=m_arr,
+            EIx=EI_arr, EIy=EI_arr, EIz=EI_arr,
+            EA=np.full(n_elements + 1, EA_val),
+            element='frame3d', nel=n_elements, BC='clamped-free',
+        )
+
+        fem_freq = FEM['freq']
+        Q = FEM['Q']
+        x_nodes = FEM['xNodes'][0, :]  # x-coordinates of nodes
+
+        # Extract bending modes (uy DOFs, every 6th starting at index 1)
+        modes_fem = []
+        n_extracted = 0
+        for mode_idx in range(min(len(fem_freq), 2 * n_modes)):
+            if n_extracted >= n_modes:
+                break
+            # Get displacement in y-direction (DOF index 1 of 6)
+            mode_shape_uy = Q[1::6, mode_idx]
+            # Skip torsional/axial modes (check if the mode has significant bending)
+            if np.max(np.abs(mode_shape_uy)) < 1e-10:
+                continue
+            # Normalize to tip value
+            tip_val = mode_shape_uy[-1]
+            if abs(tip_val) > 1e-12:
+                mode_shape_uy = mode_shape_uy / tip_val
+            modes_fem.append({
+                "frequency": float(fem_freq[mode_idx]),
+                "label": f"FEM Mode {n_extracted + 1}",
+                "shape_values": mode_shape_uy.tolist(),
+            })
+            n_extracted += 1
+
+        return {
+            "x_theory": (x_th / L).tolist(),
+            "x_fem": (x_nodes / L).tolist(),
+            "frequencies_theory": freq_th.tolist(),
+            "frequencies_fem": [m["frequency"] for m in modes_fem],
+            "modes_theory": modes_theory,
+            "modes_fem": modes_fem,
+        }
+    except Exception as exc:
+        logger.warning("FEM vs Theory comparison failed: %s", exc)
+        return {
+            "x_theory": [],
+            "x_fem": [],
+            "frequencies_theory": [],
+            "frequencies_fem": [],
+            "modes_theory": [],
+            "modes_fem": [],
+        }

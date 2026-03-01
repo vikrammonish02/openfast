@@ -14,6 +14,11 @@ from app.database import async_session_factory, create_tables, engine
 from app.routers import auth, blades, controllers, files, frequency, hydro, metocean, modeshape, projects, reference_data, templates, towers, turbine_models, websocket, wind
 from app.routers import fatigue as fatigue_router_mod
 from app.routers import airfoil_tools as airfoil_tools_router_mod
+from app.routers import bem as bem_router_mod
+from app.routers import dynamics as dynamics_router_mod
+from app.routers import stochastic as stochastic_router_mod
+from app.routers import potentialflow as potentialflow_router_mod
+from app.routers import particle as particle_router_mod
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -312,6 +317,11 @@ app.include_router(wind.router, prefix="/api/v1")
 app.include_router(fatigue_router_mod.router, prefix="/api/v1")
 app.include_router(airfoil_tools_router_mod.router, prefix="/api/v1")
 app.include_router(reference_data.router, prefix="/api/v1")
+app.include_router(bem_router_mod.router, prefix="/api/v1")
+app.include_router(dynamics_router_mod.router, prefix="/api/v1")
+app.include_router(stochastic_router_mod.router, prefix="/api/v1")
+app.include_router(potentialflow_router_mod.router, prefix="/api/v1")
+app.include_router(particle_router_mod.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

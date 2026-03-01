@@ -24,9 +24,15 @@ import logging
 import warnings
 
 import numpy as np
+from scipy.integrate import solve_ivp
 from welib.airfoils.DynamicStall import (
     dynstall_mhh_param_from_polar,
     dynstall_oye_param_from_polar,
+    dynstall_mhh_dxdt_simple,
+    dynstall_mhh_outputs_simple,
+    dynstall_oye_dxdt_simple,
+    dynstall_oye_output_simple,
+    wagner,
 )
 from welib.airfoils.Polar import Polar
 
@@ -326,3 +332,165 @@ def generate_naca_profile(
         "y_upper": y_upper.tolist(),
         "y_lower": y_lower.tolist(),
     }
+
+
+# ---------------------------------------------------------------------------
+# 5. Dynamic stall simulation (Cl-α hysteresis)
+# ---------------------------------------------------------------------------
+def compute_dynamic_stall_simulation(
+    alpha: list[float],
+    cl: list[float],
+    cd: list[float],
+    cm: list[float] | None = None,
+    chord: float = 1.0,
+    U0: float = 10.0,
+    mean_alpha_deg: float = 8.0,
+    amplitude_deg: float = 6.0,
+    freq: float = 1.0,
+    n_cycles: int = 4,
+    dt: float = 0.005,
+) -> dict:
+    """Simulate dynamic stall hysteresis using Oye model.
+
+    Uses the simple (non-callable) interface of the Oye model for
+    time-domain simulation of pitch oscillation.
+
+    Parameters
+    ----------
+    alpha, cl, cd : list[float]
+        Static polar data (alpha in degrees).
+    cm : list[float] | None
+        Moment coefficients.
+    chord, U0 : float
+        Chord and freestream velocity.
+    mean_alpha_deg, amplitude_deg : float
+        Mean and amplitude of sinusoidal oscillation (degrees).
+    freq : float
+        Oscillation frequency (Hz).
+    n_cycles : int
+        Number of oscillation cycles.
+    dt : float
+        Time step (s).
+
+    Returns
+    -------
+    dict with keys: time, alpha_dynamic, cl_static, cl_oye
+    """
+    alpha_arr = np.asarray(alpha, dtype=float)
+    cl_arr = np.asarray(cl, dtype=float)
+    cd_arr = np.asarray(cd, dtype=float)
+    cm_arr = np.asarray(cm, dtype=float) if cm is not None else np.zeros_like(cl_arr)
+
+    try:
+        # Build Oye parameter dict (needs radians polar)
+        alpha_rad = np.radians(alpha_arr)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            polar_rad = Polar(
+                alpha=alpha_rad, cl=cl_arr, cd=cd_arr, cm=cm_arr,
+                Re=1e6, compute_params=True, radians=True,
+            )
+
+        tau_chord = 3.0  # time constant in chord lengths
+        oye_p = dynstall_oye_param_from_polar(polar_rad, tau_chord=tau_chord)
+        # Actual time constant from parameters
+        tau = oye_p.get("tau", tau_chord * chord / U0)
+
+        # Build interpolation functions from polar
+        from scipy.interpolate import interp1d
+        cl_interp = interp1d(alpha_rad, cl_arr, kind='linear',
+                             bounds_error=False, fill_value='extrapolate')
+        cd_interp = interp1d(alpha_rad, cd_arr, kind='linear',
+                             bounds_error=False, fill_value='extrapolate')
+        cm_interp = interp1d(alpha_rad, cm_arr, kind='linear',
+                             bounds_error=False, fill_value='extrapolate')
+
+        F_st = oye_p.get("F_st", None)
+        Clinv = oye_p.get("Clinv", None)
+        Clfs = oye_p.get("Clfs", None)
+
+        if F_st is None or Clinv is None or Clfs is None:
+            raise ValueError("Missing Oye parameter functions")
+
+        # Time simulation
+        t_max = n_cycles / freq
+        time = np.arange(0, t_max, dt)
+        alpha_dyn_rad = np.radians(mean_alpha_deg) + np.radians(amplitude_deg) * np.sin(2 * np.pi * freq * time)
+        alpha_dyn_deg = np.degrees(alpha_dyn_rad)
+
+        # Static Cl for reference
+        cl_static = cl_interp(alpha_dyn_rad).tolist()
+
+        # Oye simulation: simple Euler integration
+        fs = float(F_st(alpha_dyn_rad[0]))  # initial separation
+        cl_oye_list = []
+
+        for i, a_rad in enumerate(alpha_dyn_rad):
+            # Get separation function at current alpha
+            fs_alpha = float(F_st(a_rad))
+            # Update separation state
+            fs_dot = (fs_alpha - fs) / tau
+            fs = fs + fs_dot * dt
+
+            # Compute lift
+            cl_inv = float(Clinv(a_rad))
+            cl_fs = float(Clfs(a_rad))
+            cl_val = fs * cl_inv + (1.0 - fs) * cl_fs
+            cl_oye_list.append(cl_val)
+
+        return {
+            "time": time.tolist(),
+            "alpha_dynamic": alpha_dyn_deg.tolist(),
+            "cl_static": cl_static,
+            "cl_oye": cl_oye_list,
+        }
+    except Exception as exc:
+        logger.warning("Dynamic stall simulation failed: %s", exc)
+        t_max = n_cycles / freq
+        time = np.arange(0, t_max, dt)
+        alpha_dyn = mean_alpha_deg + amplitude_deg * np.sin(2 * np.pi * freq * time)
+        return {
+            "time": time.tolist(),
+            "alpha_dynamic": alpha_dyn.tolist(),
+            "cl_static": [0.0] * len(time),
+            "cl_oye": [0.0] * len(time),
+        }
+
+
+# ---------------------------------------------------------------------------
+# 6. Wagner indicial lift function
+# ---------------------------------------------------------------------------
+def compute_wagner_response(
+    s_max: float = 30.0,
+    n_points: int = 500,
+) -> dict:
+    """Compute Wagner indicial lift response for Jones and OpenFAST constants.
+
+    Parameters
+    ----------
+    s_max : float
+        Maximum semi-chord travel distance.
+    n_points : int
+        Number of points.
+
+    Returns
+    -------
+    dict with keys: s, phi_jones, phi_openfast
+    """
+    s = np.linspace(0, s_max, n_points)
+
+    try:
+        phi_jones = wagner(s, constants='Jones')
+        phi_openfast = wagner(s, constants='OpenFAST')
+        return {
+            "s": s.tolist(),
+            "phi_jones": phi_jones.tolist(),
+            "phi_openfast": phi_openfast.tolist(),
+        }
+    except Exception as exc:
+        logger.warning("Wagner computation failed: %s", exc)
+        return {
+            "s": s.tolist(),
+            "phi_jones": [0.0] * n_points,
+            "phi_openfast": [0.0] * n_points,
+        }
