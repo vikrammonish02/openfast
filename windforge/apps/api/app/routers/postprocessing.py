@@ -25,12 +25,15 @@ from app.schemas.postprocessing import (
     SpectralResponse,
     DampingRequest,
     DampingResponse,
+    ExtremeValueRequest,
+    ExtremeValueResponse,
 )
 from app.services.postprocessing_service import (
     compute_del_fatigue,
     compute_statistics,
     compute_spectral,
     compute_damping,
+    compute_extreme_value,
 )
 
 logger = logging.getLogger("windforge.postprocessing")
@@ -181,3 +184,39 @@ async def damping(
         ),
     )
     return DampingResponse(**result)
+
+
+@router.post("/extreme-value", response_model=ExtremeValueResponse)
+async def extreme_value(
+    project_id: str,
+    body: ExtremeValueRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extreme value extrapolation using Gumbel (EV1) distribution.
+
+    Based on NREL/CP-500-25787 and NREL/TP-500-34421.
+    Generates N simulations, extracts block maxima, fits Gumbel,
+    and extrapolates to target return periods with 95% confidence bounds.
+    """
+    await _verify_project(project_id, current_user.org_id, db)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        partial(
+            compute_extreme_value,
+            signal_type=body.signal_type,
+            amplitude=body.amplitude,
+            frequency=body.frequency,
+            noise_std=body.noise_std,
+            mean_load=body.mean_load,
+            duration=body.duration,
+            dt=body.dt,
+            n_simulations=body.n_simulations,
+            block_size=body.block_size,
+            threshold_sigma=body.threshold_sigma,
+            return_periods=body.return_periods,
+        ),
+    )
+    return ExtremeValueResponse(**result)

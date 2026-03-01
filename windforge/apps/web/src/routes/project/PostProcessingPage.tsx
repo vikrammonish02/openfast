@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { BarChart3, Activity, Waves, TrendingDown, Loader2 } from 'lucide-react';
+import { BarChart3, Activity, Waves, TrendingDown, Loader2, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Plot from 'react-plotly.js';
 import axios from 'axios';
@@ -20,6 +20,7 @@ const TABS = [
   { key: 'statistics', label: 'Statistics & PDF', icon: Activity },
   { key: 'spectral', label: 'Spectral Analysis', icon: Waves },
   { key: 'damping', label: 'Damping Estimation', icon: TrendingDown },
+  { key: 'extremevalue', label: 'Gumbel Extrapolation', icon: TrendingUp },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -41,6 +42,19 @@ interface DampingResult {
   peaks_pos_t: number[]; peaks_pos_x: number[]; peaks_neg_t: number[]; peaks_neg_x: number[];
   estimated: { fn: number; fd: number; zeta: number; zetaMin: number; zetaMax: number; omega0: number; Td: number };
   input_params: { fn_true: number; zeta_true: number };
+}
+interface EVResult {
+  time: number[]; signal: number[];
+  block_maxima: number[];
+  gumbel_params: { alpha: number; beta: number; mu: number; sigma: number; n_extremes: number };
+  prob_plot_x: number[]; prob_plot_y: number[];
+  prob_plot_fit_x: number[]; prob_plot_fit_y: number[];
+  return_periods: string[];
+  extrapolated_loads: Record<string, number>;
+  confidence_95_lower: Record<string, number>;
+  confidence_95_upper: Record<string, number>;
+  pot_threshold: number;
+  pot_peaks_t: number[]; pot_peaks_x: number[];
 }
 
 /* ---- helpers ---- */
@@ -138,6 +152,20 @@ export default function PostProcessingPage() {
   const [dResult, setDResult] = useState<DampingResult | null>(null);
   const [dLoading, setDLoading] = useState(false);
 
+  /* ---- Extreme Value (Gumbel) state ---- */
+  const [evSigType, setEvSigType] = useState('turbulent_load');
+  const [evAmpl, setEvAmpl] = useState(2000.0);
+  const [evFreq, setEvFreq] = useState(0.3);
+  const [evNoise, setEvNoise] = useState(500.0);
+  const [evMean, setEvMean] = useState(3000.0);
+  const [evDur, setEvDur] = useState(600.0);
+  const [evDt, setEvDt] = useState(0.05);
+  const [evNSim, setEvNSim] = useState(6);
+  const [evBlockSize, setEvBlockSize] = useState(600.0);
+  const [evThreshSigma, setEvThreshSigma] = useState(1.4);
+  const [evResult, setEvResult] = useState<EVResult | null>(null);
+  const [evLoading, setEvLoading] = useState(false);
+
   /* ---- handlers ---- */
   const handleFatigue = useCallback(async () => {
     if (!projectId) return;
@@ -193,6 +221,20 @@ export default function PostProcessingPage() {
     finally { setDLoading(false); }
   }, [projectId, dFn, dZeta, dAmpl, dOffset, dDur, dDt]);
 
+  const handleExtremeValue = useCallback(async () => {
+    if (!projectId) return;
+    setEvLoading(true); setError(null); setEvResult(null);
+    try {
+      setEvResult(await ppPost<EVResult>(projectId, 'extreme-value', {
+        signal_type: evSigType, amplitude: evAmpl, frequency: evFreq, noise_std: evNoise,
+        mean_load: evMean, duration: evDur, dt: evDt, n_simulations: evNSim,
+        block_size: evBlockSize, threshold_sigma: evThreshSigma,
+      }));
+      toast.success('Gumbel extrapolation computed');
+    } catch { setError('Extreme value extrapolation failed'); toast.error('Failed'); }
+    finally { setEvLoading(false); }
+  }, [projectId, evSigType, evAmpl, evFreq, evNoise, evMean, evDur, evDt, evNSim, evBlockSize, evThreshSigma]);
+
   /* ---- plot memos ---- */
   const fatigueSignalTrace = useMemo(() => fResult ? [
     { x: fResult.time, y: fResult.signal, type: 'scatter' as const, mode: 'lines' as const, name: 'Load signal', line: { color: '#22d3ee', width: 1 } },
@@ -242,8 +284,46 @@ export default function PostProcessingPage() {
     ];
   }, [dResult]);
 
-  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : dLoading;
-  const handleCompute = activeTab === 'fatigue' ? handleFatigue : activeTab === 'statistics' ? handleStats : activeTab === 'spectral' ? handleSpectral : handleDamping;
+  /* Extreme Value traces */
+  const evSignalTrace = useMemo(() => {
+    if (!evResult) return [];
+    const traces: Plotly.Data[] = [
+      { x: evResult.time, y: evResult.signal, type: 'scatter', mode: 'lines', name: 'Last simulation', line: { color: '#22d3ee', width: 1 } } as Plotly.Data,
+    ];
+    if (evResult.pot_peaks_t.length > 0) {
+      traces.push({ x: evResult.pot_peaks_t, y: evResult.pot_peaks_x, type: 'scatter', mode: 'markers', name: 'Peaks over threshold', marker: { color: '#f87171', size: 7, symbol: 'diamond' } } as Plotly.Data);
+    }
+    // Threshold line
+    const tMin = evResult.time[0] ?? 0;
+    const tMax = evResult.time[evResult.time.length - 1] ?? 1;
+    traces.push({ x: [tMin, tMax], y: [evResult.pot_threshold, evResult.pot_threshold], type: 'scatter', mode: 'lines', name: `Threshold (${evResult.pot_threshold.toFixed(0)})`, line: { color: '#fbbf24', width: 2, dash: 'dash' } } as Plotly.Data);
+    return traces;
+  }, [evResult]);
+
+  const evGumbelPlotTrace = useMemo(() => {
+    if (!evResult) return [];
+    return [
+      { x: evResult.prob_plot_x, y: evResult.prob_plot_y, type: 'scatter', mode: 'markers', name: 'Block maxima', marker: { color: '#22d3ee', size: 8 } } as Plotly.Data,
+      { x: evResult.prob_plot_fit_x, y: evResult.prob_plot_fit_y, type: 'scatter', mode: 'lines', name: 'Gumbel fit', line: { color: '#f472b6', width: 2 } } as Plotly.Data,
+    ];
+  }, [evResult]);
+
+  const evReturnPeriodTrace = useMemo(() => {
+    if (!evResult || !Object.keys(evResult.extrapolated_loads).length) return [];
+    const rps = evResult.return_periods;
+    const loads = rps.map((k) => evResult.extrapolated_loads[k]);
+    const lower = rps.map((k) => evResult.confidence_95_lower[k]);
+    const upper = rps.map((k) => evResult.confidence_95_upper[k]);
+    const rpNums = rps.map((k) => parseFloat(k.replace('T=', '')));
+    return [
+      { x: rpNums, y: upper, type: 'scatter', mode: 'lines', name: '95% CI upper', line: { color: 'rgba(244,114,182,0.3)', width: 0 }, showlegend: false } as Plotly.Data,
+      { x: rpNums, y: lower, type: 'scatter', mode: 'lines', name: '95% CI', line: { color: 'rgba(244,114,182,0.3)', width: 0 }, fill: 'tonexty', fillcolor: 'rgba(244,114,182,0.15)' } as Plotly.Data,
+      { x: rpNums, y: loads, type: 'scatter', mode: 'lines+markers', name: 'Extrapolated load', line: { color: '#f472b6', width: 2 }, marker: { size: 7 } } as Plotly.Data,
+    ];
+  }, [evResult]);
+
+  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : activeTab === 'damping' ? dLoading : evLoading;
+  const handleCompute = activeTab === 'fatigue' ? handleFatigue : activeTab === 'statistics' ? handleStats : activeTab === 'spectral' ? handleSpectral : activeTab === 'damping' ? handleDamping : handleExtremeValue;
 
   return (
     <div className="h-full flex flex-col">
@@ -273,6 +353,7 @@ export default function PostProcessingPage() {
               {activeTab === 'statistics' && 'Compute PDF and basic statistics using openfast_toolbox stats module.'}
               {activeTab === 'spectral' && 'Compute FFT/PSD using openfast_toolbox spectral module with Welch averaging.'}
               {activeTab === 'damping' && 'Estimate natural frequency and damping ratio from a decaying signal using openfast_toolbox peak detection.'}
+              {activeTab === 'extremevalue' && 'Extreme value extrapolation using Gumbel (EV1) distribution. Based on NREL/CP-500-25787 and NREL/TP-500-34421. Generates N simulations, extracts block maxima, fits Gumbel, and extrapolates to target return periods with 95% confidence bounds.'}
             </p>
 
             {activeTab === 'fatigue' && <>
@@ -325,6 +406,19 @@ export default function PostProcessingPage() {
               <NumberInput label="Mean Offset" value={dOffset} onChange={setDOffset} step={1} />
               <NumberInput label="Duration" value={dDur} onChange={setDDur} step={10} min={10} max={1000} unit="s" />
               <NumberInput label="Time Step" value={dDt} onChange={setDDt} step={0.01} min={0.001} max={1} unit="s" />
+            </>}
+
+            {activeTab === 'extremevalue' && <>
+              <SelectInput label="Signal Type" value={evSigType} onChange={setEvSigType} options={[{ value: 'turbulent_load', label: 'Turbulent + Gusts' }, { value: 'weibull_process', label: 'Weibull Process' }]} />
+              <NumberInput label="Amplitude" value={evAmpl} onChange={setEvAmpl} step={200} min={0} unit="N" />
+              <NumberInput label="Frequency" value={evFreq} onChange={setEvFreq} step={0.1} min={0.01} unit="Hz" />
+              <NumberInput label="Noise Std" value={evNoise} onChange={setEvNoise} step={100} min={0} unit="N" />
+              <NumberInput label="Mean Load" value={evMean} onChange={setEvMean} step={500} unit="N" />
+              <NumberInput label="Duration/sim" value={evDur} onChange={setEvDur} step={60} min={60} max={3600} unit="s" />
+              <NumberInput label="Time Step" value={evDt} onChange={setEvDt} step={0.01} min={0.001} max={1} unit="s" />
+              <NumberInput label="N Simulations" value={evNSim} onChange={setEvNSim} step={1} min={2} max={100} />
+              <NumberInput label="Block Size" value={evBlockSize} onChange={setEvBlockSize} step={60} min={10} max={3600} unit="s" />
+              <NumberInput label="Threshold (\u03C3)" value={evThreshSigma} onChange={setEvThreshSigma} step={0.1} min={0.5} max={5} />
             </>}
 
             <button onClick={handleCompute} disabled={loading}
@@ -403,6 +497,44 @@ export default function PostProcessingPage() {
                 </div>
               </div>
             )}
+
+            {/* Gumbel extrapolation results */}
+            {activeTab === 'extremevalue' && evResult && Object.keys(evResult.extrapolated_loads).length > 0 && (
+              <div className="mt-3 p-3 bg-slate-900/60 rounded-lg border border-slate-700/40">
+                <h4 className="text-xs font-semibold text-slate-300 mb-2">Gumbel EV1 Parameters</h4>
+                <div className="space-y-1 mb-3">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&alpha; (scale)</span>
+                    <span className="text-accent-400 font-mono">{evResult.gumbel_params.alpha.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&beta; (location)</span>
+                    <span className="text-accent-400 font-mono">{evResult.gumbel_params.beta.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&mu; extremes</span>
+                    <span className="text-slate-300 font-mono">{evResult.gumbel_params.mu.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&sigma; extremes</span>
+                    <span className="text-slate-300 font-mono">{evResult.gumbel_params.sigma.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">N extremes</span>
+                    <span className="text-slate-300 font-mono">{evResult.gumbel_params.n_extremes}</span>
+                  </div>
+                </div>
+                <h4 className="text-xs font-semibold text-slate-300 mb-2">Extrapolated Loads</h4>
+                <div className="space-y-1">
+                  {Object.entries(evResult.extrapolated_loads).map(([k, v]) => (
+                    <div key={k} className="flex justify-between text-xs">
+                      <span className="text-slate-400">{k}</span>
+                      <span className="text-accent-400 font-mono">{v.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* -------- Right: Plots -------- */}
@@ -462,8 +594,34 @@ export default function PostProcessingPage() {
               </div>
             )}
 
+            {/* GUMBEL EXTREME VALUE */}
+            {activeTab === 'extremevalue' && evResult && (
+              <>
+                <div className="bg-slate-800/30 rounded-xl p-2 border border-slate-700/30">
+                  <Plot data={evSignalTrace as Plotly.Data[]} layout={makePlotLayout({
+                    title: 'Load Time Series — Peaks Over Threshold',
+                    xaxis: { title: 'Time [s]' }, yaxis: { title: 'Load [N]' },
+                  })} config={{ responsive: true }} style={{ width: '100%', height: 280 }} />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="bg-slate-800/30 rounded-xl p-2 border border-slate-700/30">
+                    <Plot data={evGumbelPlotTrace as Plotly.Data[]} layout={makePlotLayout({
+                      title: 'Gumbel Probability Plot',
+                      xaxis: { title: 'Load [N]' }, yaxis: { title: '-ln(-ln(F))  [reduced variate]' },
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                  </div>
+                  <div className="bg-slate-800/30 rounded-xl p-2 border border-slate-700/30">
+                    <Plot data={evReturnPeriodTrace as Plotly.Data[]} layout={makePlotLayout({
+                      title: 'Return Period Extrapolation (95% CI)',
+                      xaxis: { title: 'Return Period', type: 'log' }, yaxis: { title: 'Extreme Load [N]' },
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Empty state */}
-            {!fResult && !sResult && !spResult && !dResult && !loading && (
+            {!fResult && !sResult && !spResult && !dResult && !evResult && !loading && (
               <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
                 Configure parameters and click <span className="text-accent-400 font-medium ml-1">Compute</span> to generate results.
               </div>

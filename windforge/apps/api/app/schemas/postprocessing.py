@@ -125,3 +125,46 @@ class DampingResponse(BaseModel):
     peaks_neg_x: list[float]
     estimated: DampingEstimated
     input_params: DampingInputParams
+
+
+# ---------------------------------------------------------------------------
+# Extreme Value Extrapolation (Gumbel / EV1)
+# ---------------------------------------------------------------------------
+class ExtremeValueRequest(BaseModel):
+    signal_type: str = Field(default="turbulent_load", description="Signal type: turbulent_load, weibull_process")
+    amplitude: float = Field(default=2000.0, gt=0, description="Load amplitude (N)")
+    frequency: float = Field(default=0.3, gt=0, le=50.0, description="Primary frequency (Hz)")
+    noise_std: float = Field(default=500.0, ge=0, description="Noise std dev (N)")
+    mean_load: float = Field(default=3000.0, description="Mean load level (N)")
+    duration: float = Field(default=600.0, gt=0, le=3600.0, description="Duration per simulation (s)")
+    dt: float = Field(default=0.05, gt=0.001, le=1.0, description="Time step (s)")
+    n_simulations: int = Field(default=6, ge=2, le=100, description="Number of independent simulations (seeds)")
+    block_size: float = Field(default=600.0, gt=0, le=3600.0, description="Block size for maxima extraction (s)")
+    threshold_sigma: float = Field(default=1.4, gt=0, le=5.0, description="Threshold = mean + sigma * this")
+    return_periods: list[float] = Field(default=[1.0, 10.0, 50.0, 100.0, 500.0, 1000.0], description="Return periods")
+
+
+class GumbelParams(BaseModel):
+    alpha: float
+    beta: float
+    mu: float
+    sigma: float
+    n_extremes: int
+
+
+class ExtremeValueResponse(BaseModel):
+    time: list[float]
+    signal: list[float]
+    block_maxima: list[float]
+    gumbel_params: GumbelParams
+    prob_plot_x: list[float]
+    prob_plot_y: list[float]
+    prob_plot_fit_x: list[float]
+    prob_plot_fit_y: list[float]
+    return_periods: list[str]
+    extrapolated_loads: dict[str, float]
+    confidence_95_lower: dict[str, float]
+    confidence_95_upper: dict[str, float]
+    pot_threshold: float
+    pot_peaks_t: list[float]
+    pot_peaks_x: list[float]
