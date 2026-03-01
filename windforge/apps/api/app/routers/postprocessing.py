@@ -31,14 +31,17 @@ from app.models.simulation import (
 )
 from app.models.user import User
 from app.schemas.postprocessing import (
-    DelFatigueRequest,
-    DelFatigueResponse,
     DampingRequest,
     DampingResponse,
+    DelFatigueRequest,
+    DelFatigueResponse,
     ExtremeValueRequest,
     ExtremeValueResponse,
     IECCaseInfo,
     IECCasesGrouped,
+    IECChannelListResponse,
+    IECGumbelRequest,
+    IECGumbelResponse,
     IECLoadsRequest,
     IECLoadsResponse,
     IECSimulationInfo,
@@ -51,8 +54,10 @@ from app.services.postprocessing_service import (
     compute_damping,
     compute_del_fatigue,
     compute_extreme_value,
+    compute_iec_gumbel,
     compute_spectral,
     compute_statistics,
+    get_available_channels,
 )
 
 logger = logging.getLogger("windforge.postprocessing")
@@ -637,3 +642,118 @@ async def iec_loads_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ===========================================================================
+# IEC Gumbel Extreme Value Extrapolation (Real Simulation Data)
+# ===========================================================================
+
+@router.get(
+    "/iec-gumbel/simulations/{simulation_id}/channels",
+    response_model=IECChannelListResponse,
+)
+async def get_iec_gumbel_channels(
+    project_id: str,
+    simulation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get available channels for Gumbel analysis from a simulation's output files."""
+    await _verify_project(project_id, current_user.org_id, db)
+
+    result = await db.execute(
+        select(Simulation).where(
+            Simulation.id == simulation_id,
+            Simulation.project_id == project_id,
+        )
+    )
+    sim = result.scalar_one_or_none()
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Simulation not found")
+
+    # Load DLC definition for safety factors
+    dlc_def = None
+    if sim.dlc_definition_id:
+        dlc_result = await db.execute(
+            select(DLCDefinition).where(DLCDefinition.id == sim.dlc_definition_id)
+        )
+        dlc_def = dlc_result.scalar_one_or_none()
+
+    cases = [c for c in sim.cases if c.status == CaseStatus.COMPLETED]
+    case_configs = await _build_case_configs(cases, dlc_def)
+
+    if not case_configs:
+        return IECChannelListResponse(simulation_id=simulation_id, channels=[])
+
+    loop = asyncio.get_running_loop()
+    channels = await loop.run_in_executor(
+        None,
+        partial(get_available_channels, case_configs=case_configs),
+    )
+
+    return IECChannelListResponse(simulation_id=simulation_id, channels=channels)
+
+
+@router.post("/iec-gumbel", response_model=IECGumbelResponse)
+async def iec_gumbel_analysis(
+    project_id: str,
+    body: IECGumbelRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run Gumbel (EV1) extreme value extrapolation on real simulation outputs.
+
+    Reads block maxima from selected DLC cases for a chosen channel,
+    fits Gumbel distribution, and extrapolates to target return periods
+    with 95% confidence bounds. Follows NREL/CP-500-25787 methodology.
+    """
+    await _verify_project(project_id, current_user.org_id, db)
+
+    # Load simulation
+    result = await db.execute(
+        select(Simulation).where(
+            Simulation.id == body.simulation_id,
+            Simulation.project_id == project_id,
+        )
+    )
+    sim = result.scalar_one_or_none()
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Simulation not found")
+
+    # Load DLC definition
+    dlc_def = None
+    if sim.dlc_definition_id:
+        dlc_result = await db.execute(
+            select(DLCDefinition).where(DLCDefinition.id == sim.dlc_definition_id)
+        )
+        dlc_def = dlc_result.scalar_one_or_none()
+
+    # Filter cases
+    cases = list(sim.cases)
+    if body.case_ids:
+        cases = [c for c in cases if c.id in body.case_ids]
+    if body.dlc_filter:
+        cases = [c for c in cases if c.dlc_number in body.dlc_filter]
+
+    case_configs = await _build_case_configs(cases, dlc_def)
+
+    if not case_configs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No completed cases with output files found for the selected criteria",
+        )
+
+    loop = asyncio.get_running_loop()
+    gumbel_result = await loop.run_in_executor(
+        None,
+        partial(
+            compute_iec_gumbel,
+            case_configs=case_configs,
+            channel=body.channel,
+            t_start=body.t_start,
+            block_size=body.block_size,
+            return_periods=body.return_periods,
+        ),
+    )
+
+    return IECGumbelResponse(**gumbel_result)

@@ -315,3 +315,60 @@ class IECCasesGrouped(BaseModel):
     cases: list[IECCaseInfo]
     total_cases: int
     completed_cases: int
+
+
+# ---------------------------------------------------------------------------
+# IEC Gumbel Extreme Value Extrapolation (real simulation data)
+# ---------------------------------------------------------------------------
+class IECGumbelRequest(BaseModel):
+    """Request for Gumbel extrapolation on real simulation outputs."""
+
+    simulation_id: str = Field(..., description="Simulation to analyze")
+    channel: str = Field(..., description="Channel to fit Gumbel distribution to")
+    case_ids: list[str] | None = Field(
+        default=None,
+        description="Specific case IDs to include. None = all completed cases.",
+    )
+    dlc_filter: list[str] | None = Field(
+        default=None,
+        description="Filter by DLC numbers (e.g. ['1.1']). None = all DLCs.",
+    )
+    t_start: float = Field(default=30.0, ge=0, description="Skip initial transient (s)")
+    block_size: float = Field(
+        default=600.0,
+        gt=0,
+        le=3600.0,
+        description="Block size for maxima extraction (s)",
+    )
+    return_periods: list[float] = Field(
+        default=[1.0, 10.0, 50.0, 100.0, 500.0, 1000.0],
+        description="Return periods for extrapolation",
+    )
+
+
+class IECGumbelResponse(BaseModel):
+    """Gumbel extrapolation results for a single channel from real data."""
+
+    channel: str
+    n_cases: int
+    n_blocks: int
+    time: list[float]
+    signal: list[float]
+    block_maxima: list[float]
+    gumbel_params: GumbelParams
+    prob_plot_x: list[float]
+    prob_plot_y: list[float]
+    prob_plot_fit_x: list[float]
+    prob_plot_fit_y: list[float]
+    return_periods: list[str]
+    extrapolated_loads: dict[str, float]
+    confidence_95_lower: dict[str, float]
+    confidence_95_upper: dict[str, float]
+    case_block_info: list[dict]
+
+
+class IECChannelListResponse(BaseModel):
+    """List of available channels for a simulation."""
+
+    simulation_id: str
+    channels: list[str]

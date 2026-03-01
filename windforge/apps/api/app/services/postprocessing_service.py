@@ -621,3 +621,214 @@ def compute_extreme_value(
             "pot_peaks_t": [],
             "pot_peaks_x": [],
         }
+
+
+# ---------------------------------------------------------------------------
+# 6.  IEC Gumbel Extrapolation (Real Simulation Data)
+#     Reads real OpenFAST output files, extracts block maxima per channel,
+#     fits Gumbel (EV1) distribution, and extrapolates to return periods.
+#     Follows NREL/CP-500-25787 and NREL/TP-500-34421 methodology.
+# ---------------------------------------------------------------------------
+def compute_iec_gumbel(
+    case_configs: list,
+    channel: str,
+    t_start: float = 30.0,
+    block_size: float = 600.0,
+    return_periods: list[float] | None = None,
+) -> dict:
+    """Gumbel (EV1) extreme value extrapolation from real simulation outputs.
+
+    Parameters
+    ----------
+    case_configs : list[CaseConfig]
+        List of case configurations with output_path, dlc_number, etc.
+    channel : str
+        The channel name to analyze (e.g., "RootMxc1").
+    t_start : float
+        Skip initial transient (s).
+    block_size : float
+        Block duration for block-maxima extraction (s).
+    return_periods : list[float] | None
+        Target return periods in multiples of block_size.
+
+    Returns
+    -------
+    dict with per-channel Gumbel results including plot data and extrapolated values.
+    """
+    from app.openfast.output_reader import OutputReader
+
+    if return_periods is None:
+        return_periods = [1.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
+
+    reader = OutputReader()
+    block_maxima: list[float] = []
+    case_block_info: list[dict] = []
+    last_time: list[float] = []
+    last_signal: list[float] = []
+
+    # --- Load each case, extract block maxima for the chosen channel ---
+    for cfg in case_configs:
+        try:
+            output = reader.load(cfg.output_path)
+        except Exception as exc:
+            logger.warning("Failed to load %s: %s", cfg.output_path, exc)
+            continue
+
+        if channel not in output.channel_names:
+            logger.warning("Channel '%s' not found in %s", channel, cfg.output_path)
+            continue
+
+        time_arr = output.time
+        ch_idx = output.channel_names.index(channel)
+        ch_data = output.data[:, ch_idx]
+
+        # Apply t_start filter
+        mask = time_arr >= t_start
+        if not np.any(mask):
+            mask = np.ones(len(time_arr), dtype=bool)
+        filtered_time = time_arr[mask]
+        filtered_data = ch_data[mask]
+
+        if len(filtered_data) == 0:
+            continue
+
+        # Extract block maxima
+        dt = output.dt if output.dt > 0 else 0.05
+        block_len = max(1, int(block_size / dt))
+        n_blocks = max(1, len(filtered_data) // block_len)
+
+        for b in range(n_blocks):
+            i_start = b * block_len
+            i_end = min((b + 1) * block_len, len(filtered_data))
+            if i_end > i_start:
+                bmax = float(np.max(filtered_data[i_start:i_end]))
+                block_maxima.append(bmax)
+                case_block_info.append({
+                    "case_id": cfg.case_id,
+                    "dlc": cfg.dlc_number,
+                    "vhub": cfg.wind_speed,
+                    "block": b,
+                })
+
+        # Keep last case for display
+        step = max(1, len(filtered_time) // 3000)
+        last_time = filtered_time[::step].tolist()
+        last_signal = filtered_data[::step].tolist()
+
+    if len(block_maxima) < 2:
+        return {
+            "channel": channel,
+            "n_cases": 0,
+            "n_blocks": 0,
+            "time": [],
+            "signal": [],
+            "block_maxima": [],
+            "gumbel_params": {"alpha": 0, "beta": 0, "mu": 0, "sigma": 0, "n_extremes": 0},
+            "prob_plot_x": [],
+            "prob_plot_y": [],
+            "prob_plot_fit_x": [],
+            "prob_plot_fit_y": [],
+            "return_periods": [],
+            "extrapolated_loads": {},
+            "confidence_95_lower": {},
+            "confidence_95_upper": {},
+            "case_block_info": [],
+        }
+
+    block_maxima_arr = np.array(block_maxima)
+
+    # --- Fit Gumbel ---
+    alpha, beta = _gumbel_fit_moments(block_maxima_arr)
+    mu_ext = float(np.mean(block_maxima_arr))
+    sigma_ext = float(np.std(block_maxima_arr, ddof=1))
+
+    # --- Gumbel probability plot ---
+    n_ext = len(block_maxima_arr)
+    sorted_ext = np.sort(block_maxima_arr)
+    plotting_pos = (np.arange(1, n_ext + 1) - 0.44) / (n_ext + 0.12)
+    prob_plot_y_data = -np.log(-np.log(plotting_pos))
+
+    # Fitted line
+    x_fit = np.linspace(sorted_ext[0] * 0.95, sorted_ext[-1] * 1.15, 200)
+    cdf_fit = _gumbel_cdf(x_fit, alpha, beta)
+    cdf_fit = np.clip(cdf_fit, 1e-15, 1 - 1e-15)
+    prob_plot_y_fit = -np.log(-np.log(cdf_fit))
+
+    # --- Return period extrapolation ---
+    extrapolated: dict[str, float] = {}
+    conf_lower: dict[str, float] = {}
+    conf_upper: dict[str, float] = {}
+    for rp in return_periods:
+        if rp <= 1.0:
+            x_rp = float(beta)
+            se = 0.0
+        else:
+            p = 1.0 - 1.0 / rp
+            x_rp = float(_gumbel_ppf(np.array([p]), alpha, beta)[0])
+            y_val = -np.log(-np.log(p))
+            var_x = (1.0 / alpha**2) * (1.109 + 0.514 * y_val + 0.608 * y_val**2) / n_ext
+            se = float(np.sqrt(max(var_x, 0)))
+
+        extrapolated[f"T={rp:.0f}"] = float(x_rp)
+        conf_lower[f"T={rp:.0f}"] = float(x_rp - 1.96 * se)
+        conf_upper[f"T={rp:.0f}"] = float(x_rp + 1.96 * se)
+
+    return {
+        "channel": channel,
+        "n_cases": len(case_configs),
+        "n_blocks": n_ext,
+        "time": last_time,
+        "signal": last_signal,
+        "block_maxima": block_maxima_arr.tolist(),
+        "gumbel_params": {
+            "alpha": alpha,
+            "beta": beta,
+            "mu": mu_ext,
+            "sigma": sigma_ext,
+            "n_extremes": n_ext,
+        },
+        "prob_plot_x": sorted_ext.tolist(),
+        "prob_plot_y": prob_plot_y_data.tolist(),
+        "prob_plot_fit_x": x_fit.tolist(),
+        "prob_plot_fit_y": prob_plot_y_fit.tolist(),
+        "return_periods": [f"T={rp:.0f}" for rp in return_periods],
+        "extrapolated_loads": extrapolated,
+        "confidence_95_lower": conf_lower,
+        "confidence_95_upper": conf_upper,
+        "case_block_info": case_block_info,
+    }
+
+
+def get_available_channels(
+    case_configs: list,
+) -> list[str]:
+    """Get the list of common channels across all case output files.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of channel names common to all cases.
+    """
+    from app.openfast.output_reader import OutputReader
+
+    reader = OutputReader()
+    channel_sets: list[set[str]] = []
+
+    for cfg in case_configs:
+        try:
+            output = reader.load(cfg.output_path)
+            # Exclude "Time" channel
+            channels = set(output.channel_names) - {"Time", "time"}
+            channel_sets.append(channels)
+        except Exception:
+            continue
+
+    if not channel_sets:
+        return []
+
+    # Intersection of all channel sets
+    common = channel_sets[0]
+    for cs in channel_sets[1:]:
+        common = common & cs
+
+    return sorted(common)

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { BarChart3, Activity, Waves, TrendingDown, Loader2, TrendingUp, AlertTriangle, Download, FileSpreadsheet, ChevronDown, ChevronRight, CheckSquare, Square } from 'lucide-react';
+import { BarChart3, Activity, Waves, TrendingDown, Loader2, TrendingUp, AlertTriangle, Download, FileSpreadsheet, ChevronDown, ChevronRight, CheckSquare, Square, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Plot from 'react-plotly.js';
 import axios from 'axios';
@@ -50,6 +50,7 @@ const TABS = [
   { key: 'iec-extreme', label: 'IEC Extreme Loads', icon: AlertTriangle },
   { key: 'iec-fatigue', label: 'IEC Fatigue DEL', icon: FileSpreadsheet },
   { key: 'iec-statistics', label: 'IEC Statistics', icon: Activity },
+  { key: 'iec-gumbel', label: 'IEC Gumbel EV', icon: Zap },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -129,6 +130,19 @@ interface IECLoadsResult {
   del_table: IECDELRow[];
   statistics_table: IECStatRow[];
   case_summary: IECCaseSummary[];
+}
+interface IECGumbelResult {
+  channel: string; n_cases: number; n_blocks: number;
+  time: number[]; signal: number[];
+  block_maxima: number[];
+  gumbel_params: { alpha: number; beta: number; mu: number; sigma: number; n_extremes: number };
+  prob_plot_x: number[]; prob_plot_y: number[];
+  prob_plot_fit_x: number[]; prob_plot_fit_y: number[];
+  return_periods: string[];
+  extrapolated_loads: Record<string, number>;
+  confidence_95_lower: Record<string, number>;
+  confidence_95_upper: Record<string, number>;
+  case_block_info: { case_id: string; dlc: string; vhub: number; block: number }[];
 }
 
 /* ---- helpers ---- */
@@ -252,15 +266,27 @@ export default function PostProcessingPage() {
   const [iecExcelLoading, setIecExcelLoading] = useState(false);
   const [iecExpandedRows, setIecExpandedRows] = useState<Set<string>>(new Set());
 
+  /* ---- IEC Gumbel state ---- */
+  const [gumbelSimId, setGumbelSimId] = useState('');
+  const [gumbelCasesGrouped, setGumbelCasesGrouped] = useState<IECCasesGrouped[]>([]);
+  const [gumbelSelectedDlcs, setGumbelSelectedDlcs] = useState<Set<string>>(new Set());
+  const [gumbelChannels, setGumbelChannels] = useState<string[]>([]);
+  const [gumbelSelectedChannel, setGumbelSelectedChannel] = useState('');
+  const [gumbelTStart, setGumbelTStart] = useState(30.0);
+  const [gumbelBlockSize, setGumbelBlockSize] = useState(600.0);
+  const [gumbelResult, setGumbelResult] = useState<IECGumbelResult | null>(null);
+  const [gumbelLoading, setGumbelLoading] = useState(false);
+
   const isIecTab = activeTab === 'iec-extreme' || activeTab === 'iec-fatigue' || activeTab === 'iec-statistics';
+  const isIecGumbelTab = activeTab === 'iec-gumbel';
 
   // Fetch simulations when IEC tab is first opened
   useEffect(() => {
-    if (!isIecTab || !projectId || iecSimulations.length > 0) return;
+    if (!(isIecTab || isIecGumbelTab) || !projectId || iecSimulations.length > 0) return;
     ppGet<IECSimulationInfo[]>(projectId, 'iec-loads/simulations')
       .then(setIecSimulations)
       .catch(() => toast.error('Failed to load simulations'));
-  }, [isIecTab, projectId, iecSimulations.length]);
+  }, [isIecTab, isIecGumbelTab, projectId, iecSimulations.length]);
 
   // Fetch cases when simulation changes
   useEffect(() => {
@@ -276,6 +302,33 @@ export default function PostProcessingPage() {
       })
       .catch(() => toast.error('Failed to load cases'));
   }, [projectId, iecSelectedSimId]);
+
+  // Fetch cases for Gumbel tab when simulation changes
+  useEffect(() => {
+    if (!projectId || !gumbelSimId) {
+      setGumbelCasesGrouped([]);
+      setGumbelChannels([]);
+      setGumbelSelectedChannel('');
+      return;
+    }
+    ppGet<IECCasesGrouped[]>(projectId, `iec-loads/simulations/${gumbelSimId}/cases`)
+      .then((groups) => {
+        setGumbelCasesGrouped(groups);
+        // Auto-select DLC 1.1 if available, otherwise all
+        const dlc11 = groups.find((g) => g.dlc_number === '1.1');
+        setGumbelSelectedDlcs(dlc11 ? new Set(['1.1']) : new Set(groups.map((g) => g.dlc_number)));
+      })
+      .catch(() => toast.error('Failed to load cases'));
+    // Also fetch available channels
+    ppGet<{ simulation_id: string; channels: string[] }>(projectId, `iec-gumbel/simulations/${gumbelSimId}/channels`)
+      .then((resp) => {
+        setGumbelChannels(resp.channels);
+        if (resp.channels.length > 0 && !resp.channels.includes(gumbelSelectedChannel)) {
+          setGumbelSelectedChannel(resp.channels[0]);
+        }
+      })
+      .catch(() => toast.error('Failed to load channels'));
+  }, [projectId, gumbelSimId]);
 
   const handleIecAnalysis = useCallback(async () => {
     if (!projectId || !iecSelectedSimId) return;
@@ -306,6 +359,32 @@ export default function PostProcessingPage() {
     }, `IEC_Loads_${new Date().toISOString().slice(0, 10)}.xlsx`);
     setIecExcelLoading(false);
   }, [projectId, iecSelectedSimId, iecSelectedDlcs, iecTStart, iecConsFactor]);
+
+  const handleIecGumbel = useCallback(async () => {
+    if (!projectId || !gumbelSimId || !gumbelSelectedChannel) return;
+    setGumbelLoading(true); setError(null); setGumbelResult(null);
+    try {
+      const dlcFilter = gumbelSelectedDlcs.size > 0 ? Array.from(gumbelSelectedDlcs) : undefined;
+      const result = await ppPost<IECGumbelResult>(projectId, 'iec-gumbel', {
+        simulation_id: gumbelSimId,
+        channel: gumbelSelectedChannel,
+        dlc_filter: dlcFilter,
+        t_start: gumbelTStart,
+        block_size: gumbelBlockSize,
+      });
+      setGumbelResult(result);
+      toast.success(`Gumbel fit: ${result.n_blocks} block maxima from ${result.n_cases} cases`);
+    } catch { setError('IEC Gumbel analysis failed'); toast.error('Failed'); }
+    finally { setGumbelLoading(false); }
+  }, [projectId, gumbelSimId, gumbelSelectedChannel, gumbelSelectedDlcs, gumbelTStart, gumbelBlockSize]);
+
+  const toggleGumbelDlc = useCallback((dlc: string) => {
+    setGumbelSelectedDlcs((prev) => {
+      const next = new Set(prev);
+      if (next.has(dlc)) next.delete(dlc); else next.add(dlc);
+      return next;
+    });
+  }, []);
 
   const toggleDlc = useCallback((dlc: string) => {
     setIecSelectedDlcs((prev) => {
@@ -479,7 +558,37 @@ export default function PostProcessingPage() {
     ];
   }, [evResult]);
 
-  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : activeTab === 'damping' ? dLoading : activeTab === 'extremevalue' ? evLoading : iecLoading;
+  /* IEC Gumbel traces */
+  const iecGumbelSignalTrace = useMemo(() => {
+    if (!gumbelResult || !gumbelResult.time.length) return [];
+    return [
+      { x: gumbelResult.time, y: gumbelResult.signal, type: 'scatter', mode: 'lines', name: `${gumbelResult.channel} (last case)`, line: { color: '#22d3ee', width: 1 } } as Plotly.Data,
+    ];
+  }, [gumbelResult]);
+
+  const iecGumbelProbPlotTrace = useMemo(() => {
+    if (!gumbelResult || !gumbelResult.prob_plot_x.length) return [];
+    return [
+      { x: gumbelResult.prob_plot_x, y: gumbelResult.prob_plot_y, type: 'scatter', mode: 'markers', name: 'Block maxima', marker: { color: '#fbbf24', size: 8, symbol: 'diamond' } } as Plotly.Data,
+      { x: gumbelResult.prob_plot_fit_x, y: gumbelResult.prob_plot_fit_y, type: 'scatter', mode: 'lines', name: 'Gumbel fit', line: { color: '#f472b6', width: 2 } } as Plotly.Data,
+    ];
+  }, [gumbelResult]);
+
+  const iecGumbelReturnTrace = useMemo(() => {
+    if (!gumbelResult || !Object.keys(gumbelResult.extrapolated_loads).length) return [];
+    const rps = gumbelResult.return_periods;
+    const loads = rps.map((k) => gumbelResult.extrapolated_loads[k]);
+    const lower = rps.map((k) => gumbelResult.confidence_95_lower[k]);
+    const upper = rps.map((k) => gumbelResult.confidence_95_upper[k]);
+    const rpNums = rps.map((k) => parseFloat(k.replace('T=', '')));
+    return [
+      { x: rpNums, y: upper, type: 'scatter', mode: 'lines', name: '95% CI upper', line: { color: 'rgba(251,191,36,0.3)', width: 0 }, showlegend: false } as Plotly.Data,
+      { x: rpNums, y: lower, type: 'scatter', mode: 'lines', name: '95% CI', line: { color: 'rgba(251,191,36,0.3)', width: 0 }, fill: 'tonexty', fillcolor: 'rgba(251,191,36,0.15)' } as Plotly.Data,
+      { x: rpNums, y: loads, type: 'scatter', mode: 'lines+markers', name: 'Extrapolated', line: { color: '#fbbf24', width: 2 }, marker: { size: 7 } } as Plotly.Data,
+    ];
+  }, [gumbelResult]);
+
+  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : activeTab === 'damping' ? dLoading : activeTab === 'extremevalue' ? evLoading : activeTab === 'iec-gumbel' ? gumbelLoading : iecLoading;
   const handleCompute = activeTab === 'fatigue' ? handleFatigue : activeTab === 'statistics' ? handleStats : activeTab === 'spectral' ? handleSpectral : activeTab === 'damping' ? handleDamping : activeTab === 'extremevalue' ? handleExtremeValue : handleIecAnalysis;
 
   return (
@@ -514,6 +623,7 @@ export default function PostProcessingPage() {
               {activeTab === 'spectral' && 'Compute FFT/PSD using openfast_toolbox spectral module with Welch averaging.'}
               {activeTab === 'damping' && 'Estimate natural frequency and damping ratio from a decaying signal using openfast_toolbox peak detection.'}
               {activeTab === 'extremevalue' && 'Extreme value extrapolation using Gumbel (EV1) distribution. Based on NREL/CP-500-25787 and NREL/TP-500-34421. Generates N simulations, extracts block maxima, fits Gumbel, and extrapolates to target return periods with 95% confidence bounds.'}
+              {isIecGumbelTab && 'IEC Gumbel (EV1) extrapolation from real simulation outputs. Select DLC cases (typically DLC 1.1), choose a channel, and extract block maxima across seeds for Gumbel fitting and return period extrapolation per NREL/CP-500-25787.'}
             </p>
 
             {activeTab === 'fatigue' && <>
@@ -616,8 +726,60 @@ export default function PostProcessingPage() {
               <NumberInput label="Consequence Factor" value={iecConsFactor} onChange={setIecConsFactor} step={0.05} min={1.0} max={1.3} />
             </>}
 
+            {/* ===== IEC Gumbel Parameters ===== */}
+            {isIecGumbelTab && <>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Simulation</label>
+                <select value={gumbelSimId} onChange={(e) => setGumbelSimId(e.target.value)}
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 w-full focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+                  <option value="">Select simulation...</option>
+                  {iecSimulations.map((sim) => (
+                    <option key={sim.id} value={sim.id}>
+                      {sim.name} ({sim.completed_cases}/{sim.total_cases} cases)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {gumbelCasesGrouped.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">DLC Selection</label>
+                  <div className="space-y-1 max-h-40 overflow-y-auto bg-slate-900/40 rounded-lg p-2 border border-slate-700/40">
+                    {gumbelCasesGrouped.map((group) => (
+                      <button key={group.dlc_number} onClick={() => toggleGumbelDlc(group.dlc_number)}
+                        className={`flex items-center gap-2 w-full text-left px-2 py-1 rounded text-xs transition-colors ${gumbelSelectedDlcs.has(group.dlc_number) ? 'bg-amber-500/15 text-amber-300' : 'text-slate-400 hover:text-slate-200'}`}>
+                        {gumbelSelectedDlcs.has(group.dlc_number) ? <CheckSquare className="w-3.5 h-3.5 text-amber-400" /> : <Square className="w-3.5 h-3.5" />}
+                        <span className="font-mono">DLC {group.dlc_number}</span>
+                        <span className="text-slate-500 ml-auto">{group.completed_cases}/{group.total_cases}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {gumbelChannels.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Channel</label>
+                  <select value={gumbelSelectedChannel} onChange={(e) => setGumbelSelectedChannel(e.target.value)}
+                    className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 w-full focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+                    {gumbelChannels.map((ch) => (
+                      <option key={ch} value={ch}>{ch}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <NumberInput label="Transient Skip" value={gumbelTStart} onChange={setGumbelTStart} step={5} min={0} max={120} unit="s" />
+              <NumberInput label="Block Size" value={gumbelBlockSize} onChange={setGumbelBlockSize} step={60} min={10} max={3600} unit="s" />
+
+              <button onClick={handleIecGumbel} disabled={gumbelLoading || !gumbelSimId || !gumbelSelectedChannel}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors mt-3">
+                {gumbelLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Fitting Gumbel...</> : <><Zap className="w-4 h-4" />Run Gumbel Analysis</>}
+              </button>
+            </>}
+
             {/* Compute / Run buttons */}
-            {!isIecTab && (
+            {!isIecTab && !isIecGumbelTab && (
               <button onClick={handleCompute} disabled={loading}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-600 hover:bg-accent-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors mt-3">
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Computing...</> : 'Compute'}
@@ -748,6 +910,52 @@ export default function PostProcessingPage() {
               </div>
             )}
 
+            {/* IEC Gumbel results summary */}
+            {isIecGumbelTab && gumbelResult && gumbelResult.n_blocks > 0 && (
+              <div className="mt-3 p-3 bg-slate-900/60 rounded-lg border border-amber-700/30">
+                <h4 className="text-xs font-semibold text-amber-300 mb-2">Gumbel EV1 Parameters</h4>
+                <div className="space-y-1 mb-3">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Channel</span>
+                    <span className="text-amber-400 font-mono text-[10px]">{gumbelResult.channel}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&alpha; (scale)</span>
+                    <span className="text-amber-300 font-mono">{gumbelResult.gumbel_params.alpha.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&beta; (location)</span>
+                    <span className="text-amber-300 font-mono">{gumbelResult.gumbel_params.beta.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&mu; extremes</span>
+                    <span className="text-slate-300 font-mono">{gumbelResult.gumbel_params.mu.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">&sigma; extremes</span>
+                    <span className="text-slate-300 font-mono">{gumbelResult.gumbel_params.sigma.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">N blocks</span>
+                    <span className="text-slate-300 font-mono">{gumbelResult.n_blocks}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">N cases</span>
+                    <span className="text-slate-300 font-mono">{gumbelResult.n_cases}</span>
+                  </div>
+                </div>
+                <h4 className="text-xs font-semibold text-amber-300 mb-2">Extrapolated Loads</h4>
+                <div className="space-y-1">
+                  {Object.entries(gumbelResult.extrapolated_loads).map(([k, v]) => (
+                    <div key={k} className="flex justify-between text-xs">
+                      <span className="text-slate-400">{k}</span>
+                      <span className="text-amber-400 font-mono">{v.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* IEC analysis summary */}
             {isIecTab && iecResult && (
               <div className="mt-3 p-3 bg-slate-900/60 rounded-lg border border-amber-700/30">
@@ -863,6 +1071,124 @@ export default function PostProcessingPage() {
                   </div>
                 </div>
               </>
+            )}
+
+            {/* ===== IEC GUMBEL EXTRAPOLATION ===== */}
+            {isIecGumbelTab && gumbelResult && gumbelResult.n_blocks > 0 && (
+              <>
+                {/* Time series */}
+                {gumbelResult.time.length > 0 && (
+                  <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
+                    <Plot data={iecGumbelSignalTrace as Plotly.Data[]} layout={makePlotLayout({
+                      title: `${gumbelResult.channel} — Last Case Time Series`,
+                      xaxis: { title: 'Time [s]' }, yaxis: { title: gumbelResult.channel },
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 260 }} />
+                  </div>
+                )}
+
+                {/* Gumbel probability plot + return period */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
+                    <Plot data={iecGumbelProbPlotTrace as Plotly.Data[]} layout={makePlotLayout({
+                      title: 'Gumbel Probability Plot',
+                      xaxis: { title: `${gumbelResult.channel}` }, yaxis: { title: '-ln(-ln(F))  [reduced variate]' },
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                  </div>
+                  <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
+                    <Plot data={iecGumbelReturnTrace as Plotly.Data[]} layout={makePlotLayout({
+                      title: 'Return Period Extrapolation (95% CI)',
+                      xaxis: { title: 'Return Period', type: 'log' }, yaxis: { title: `${gumbelResult.channel}` },
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                  </div>
+                </div>
+
+                {/* Extrapolated loads table */}
+                <div className="bg-slate-800/30 rounded-xl border border-amber-700/20 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-700/30">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      Extrapolated Extreme Loads — {gumbelResult.channel}
+                    </h3>
+                    <p className="text-[10px] text-slate-500">
+                      Gumbel (EV1) fit from {gumbelResult.n_blocks} block maxima across {gumbelResult.n_cases} cases
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-800/60 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-slate-400 font-semibold">Return Period</th>
+                          <th className="px-3 py-2 text-right text-amber-400 font-semibold">Extrapolated Load</th>
+                          <th className="px-3 py-2 text-right text-slate-400 font-semibold">95% CI Lower</th>
+                          <th className="px-3 py-2 text-right text-slate-400 font-semibold">95% CI Upper</th>
+                          <th className="px-3 py-2 text-right text-slate-400 font-semibold">CI Width</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/30">
+                        {gumbelResult.return_periods.map((rp) => {
+                          const load = gumbelResult.extrapolated_loads[rp];
+                          const lower = gumbelResult.confidence_95_lower[rp];
+                          const upper = gumbelResult.confidence_95_upper[rp];
+                          return (
+                            <tr key={rp} className="hover:bg-slate-800/40">
+                              <td className="px-3 py-2 font-mono text-slate-200">{rp}</td>
+                              <td className="px-3 py-2 text-right font-mono text-amber-300 font-semibold">{load.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-400">{lower.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-400">{upper.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-500">{(upper - lower).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Block maxima summary */}
+                <div className="bg-slate-800/30 rounded-xl border border-amber-700/20 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-700/30">
+                    <h3 className="text-sm font-semibold text-slate-200">Block Maxima Details</h3>
+                    <p className="text-[10px] text-slate-500">Individual block maximum values extracted from each case</p>
+                  </div>
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-800/60 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-slate-400 font-semibold">#</th>
+                          <th className="px-3 py-2 text-left text-slate-400 font-semibold">Case ID</th>
+                          <th className="px-3 py-2 text-center text-slate-400 font-semibold">DLC</th>
+                          <th className="px-3 py-2 text-right text-slate-400 font-semibold">Vhub (m/s)</th>
+                          <th className="px-3 py-2 text-right text-slate-400 font-semibold">Block</th>
+                          <th className="px-3 py-2 text-right text-amber-400 font-semibold">Block Max</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/30">
+                        {gumbelResult.block_maxima.map((bm, idx) => {
+                          const info = gumbelResult.case_block_info[idx];
+                          return (
+                            <tr key={idx} className="hover:bg-slate-800/40">
+                              <td className="px-3 py-1.5 text-slate-500">{idx + 1}</td>
+                              <td className="px-3 py-1.5 font-mono text-slate-300 text-[10px]">{info?.case_id?.slice(0, 8) || '-'}</td>
+                              <td className="px-3 py-1.5 text-center text-amber-400">{info?.dlc || '-'}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-300">{info?.vhub?.toFixed(1) || '-'}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-400">{info?.block ?? '-'}</td>
+                              <td className="px-3 py-1.5 text-right font-mono text-amber-300 font-semibold">{bm.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* IEC Gumbel empty state */}
+            {isIecGumbelTab && !gumbelResult && !gumbelLoading && (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-500 text-sm gap-2">
+                <Zap className="w-8 h-8 text-slate-600" />
+                <span>Select a simulation, choose DLCs & channel, then click <span className="text-amber-400 font-medium">Run Gumbel Analysis</span></span>
+                <span className="text-[10px] text-slate-600">Typically used with DLC 1.1 for 50-year return period extrapolation</span>
+              </div>
             )}
 
             {/* ===== IEC EXTREME LOADS TABLE ===== */}
@@ -1030,7 +1356,7 @@ export default function PostProcessingPage() {
             )}
 
             {/* Empty state */}
-            {!isIecTab && !fResult && !sResult && !spResult && !dResult && !evResult && !loading && (
+            {!isIecTab && !isIecGumbelTab && !fResult && !sResult && !spResult && !dResult && !evResult && !loading && (
               <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
                 Configure parameters and click <span className="text-accent-400 font-medium ml-1">Compute</span> to generate results.
               </div>
