@@ -11,7 +11,9 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session_factory, create_tables, engine
-from app.routers import auth, blades, controllers, files, frequency, metocean, projects, reference_data, templates, towers, turbine_models, websocket
+from app.routers import auth, blades, controllers, files, frequency, hydro, metocean, modeshape, projects, reference_data, templates, towers, turbine_models, websocket, wind
+from app.routers import fatigue as fatigue_router_mod
+from app.routers import airfoil_tools as airfoil_tools_router_mod
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -118,6 +120,11 @@ app.include_router(templates.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(metocean.router, prefix="/api/v1")
 app.include_router(frequency.router, prefix="/api/v1")
+app.include_router(modeshape.router, prefix="/api/v1")
+app.include_router(hydro.router, prefix="/api/v1")
+app.include_router(wind.router, prefix="/api/v1")
+app.include_router(fatigue_router_mod.router, prefix="/api/v1")
+app.include_router(airfoil_tools_router_mod.router, prefix="/api/v1")
 app.include_router(reference_data.router, prefix="/api/v1")
 
 

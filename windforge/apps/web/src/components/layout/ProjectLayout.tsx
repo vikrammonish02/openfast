@@ -14,6 +14,10 @@ import {
   Wind,
   FolderOpen,
   ChevronRight,
+  Droplets,
+  Spline,
+  CloudRain,
+  Feather,
 } from 'lucide-react';
 
 const tabs = [
@@ -22,6 +26,10 @@ const tabs = [
   { path: 'controller', label: 'Controller', icon: Gauge },
   { path: 'assembly', label: 'Assembly', icon: Boxes },
   { path: 'campbell', label: 'Frequencies', icon: Activity },
+  { path: 'hydro', label: 'Hydro', icon: Droplets },
+  { path: 'modeshapes', label: 'Mode Shapes', icon: Spline },
+  { path: 'wind', label: 'Wind', icon: CloudRain },
+  { path: 'airfoils', label: 'Airfoils', icon: Feather },
   { path: 'dlc', label: 'DLC', icon: Table2 },
   { path: 'simulate', label: 'Simulate', icon: Play },
   { path: 'results', label: 'Results', icon: BarChart3 },

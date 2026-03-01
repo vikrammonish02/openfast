@@ -20,6 +20,10 @@ import TurbineProperties from '@/components/turbine/TurbineProperties';
 import FileBrowser from '@/routes/project/FileBrowser';
 import MetoceanPage from '@/routes/MetoceanPage';
 import CampbellDiagram from '@/routes/project/CampbellDiagram';
+import HydroPage from '@/routes/project/HydroPage';
+import ModeShapePage from '@/routes/project/ModeShapePage';
+import WindEnvironmentPage from '@/routes/project/WindEnvironmentPage';
+import AirfoilToolsPage from '@/routes/project/AirfoilToolsPage';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
@@ -60,6 +64,10 @@ function App() {
           <Route path="controller" element={<ControllerDesigner />} />
           <Route path="assembly" element={<TurbineAssembly />} />
           <Route path="campbell" element={<CampbellDiagram />} />
+          <Route path="hydro" element={<HydroPage />} />
+          <Route path="modeshapes" element={<ModeShapePage />} />
+          <Route path="wind" element={<WindEnvironmentPage />} />
+          <Route path="airfoils" element={<AirfoilToolsPage />} />
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />
