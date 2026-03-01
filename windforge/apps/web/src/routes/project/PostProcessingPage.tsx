@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { BarChart3, Activity, Waves, TrendingDown, Loader2, TrendingUp } from 'lucide-react';
+import { BarChart3, Activity, Waves, TrendingDown, Loader2, TrendingUp, AlertTriangle, Download, FileSpreadsheet, ChevronDown, ChevronRight, CheckSquare, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Plot from 'react-plotly.js';
 import axios from 'axios';
@@ -15,12 +15,41 @@ function ppPost<T>(projectId: string, endpoint: string, data: unknown): Promise<
   }).then((res) => res.data);
 }
 
+function ppGet<T>(projectId: string, endpoint: string): Promise<T> {
+  const token = localStorage.getItem('windforge_token');
+  return axios.get<T>(`${API_BASE}/projects/${projectId}/postprocessing/${endpoint}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  }).then((res) => res.data);
+}
+
+function ppDownload(projectId: string, endpoint: string, data: unknown, filename: string): void {
+  const token = localStorage.getItem('windforge_token');
+  axios.post(`${API_BASE}/projects/${projectId}/postprocessing/${endpoint}`, data, {
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    responseType: 'blob',
+  }).then((res) => {
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${filename}`);
+  }).catch(() => toast.error('Download failed'));
+}
+
 const TABS = [
   { key: 'fatigue', label: 'DEL & Fatigue', icon: BarChart3 },
   { key: 'statistics', label: 'Statistics & PDF', icon: Activity },
   { key: 'spectral', label: 'Spectral Analysis', icon: Waves },
   { key: 'damping', label: 'Damping Estimation', icon: TrendingDown },
   { key: 'extremevalue', label: 'Gumbel Extrapolation', icon: TrendingUp },
+  // --- IEC Loads Analysis (Real Data) ---
+  { key: 'iec-extreme', label: 'IEC Extreme Loads', icon: AlertTriangle },
+  { key: 'iec-fatigue', label: 'IEC Fatigue DEL', icon: FileSpreadsheet },
+  { key: 'iec-statistics', label: 'IEC Statistics', icon: Activity },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -55,6 +84,51 @@ interface EVResult {
   confidence_95_upper: Record<string, number>;
   pot_threshold: number;
   pot_peaks_t: number[]; pot_peaks_x: number[];
+}
+
+/* ---- IEC Loads interfaces ---- */
+interface IECSimulationInfo {
+  id: string; name: string; status: string;
+  total_cases: number; completed_cases: number; failed_cases: number;
+  dlc_numbers: string[]; created_at: string;
+}
+interface IECCaseInfo {
+  case_id: string; dlc_number: string; wind_speed: number;
+  seed_number: number; yaw_misalignment: number; analysis_type: string;
+  safety_factor: number; probability_weight: number; status: string;
+}
+interface IECCasesGrouped {
+  dlc_number: string; cases: IECCaseInfo[];
+  total_cases: number; completed_cases: number;
+}
+interface IECExtremeRow {
+  channel: string; unit: string;
+  max_characteristic: number; max_design: number; max_dlc: string; max_vhub: number; max_time: number; max_case_id: string;
+  min_characteristic: number; min_design: number; min_dlc: string; min_vhub: number; min_time: number; min_case_id: string;
+  safety_factor_max: number; safety_factor_min: number;
+}
+interface IECConcurrentLoad {
+  governing_channel: string; extreme_type: string; timestep_values: Record<string, number>;
+}
+interface IECDELRow {
+  channel: string; unit: string; del_values: Record<string, number>; n_equivalent: number;
+}
+interface IECStatRow {
+  channel: string; unit: string; mean: number; std: number;
+  min_val: number; max_val: number; abs_max: number; n_cases: number;
+}
+interface IECCaseSummary {
+  case_id: string; dlc_number: string; wind_speed: number; seed_number: number;
+  yaw_misalignment: number; analysis_type: string; safety_factor: number; probability_weight: number;
+}
+interface IECLoadsResult {
+  simulation_id: string; simulation_name: string;
+  n_cases_analyzed: number; channels_analyzed: string[];
+  extreme_loads: IECExtremeRow[];
+  concurrent_loads: IECConcurrentLoad[];
+  del_table: IECDELRow[];
+  statistics_table: IECStatRow[];
+  case_summary: IECCaseSummary[];
 }
 
 /* ---- helpers ---- */
@@ -165,6 +239,89 @@ export default function PostProcessingPage() {
   const [evThreshSigma, setEvThreshSigma] = useState(1.4);
   const [evResult, setEvResult] = useState<EVResult | null>(null);
   const [evLoading, setEvLoading] = useState(false);
+
+  /* ---- IEC Loads state ---- */
+  const [iecSimulations, setIecSimulations] = useState<IECSimulationInfo[]>([]);
+  const [iecSelectedSimId, setIecSelectedSimId] = useState('');
+  const [iecCasesGrouped, setIecCasesGrouped] = useState<IECCasesGrouped[]>([]);
+  const [iecSelectedDlcs, setIecSelectedDlcs] = useState<Set<string>>(new Set());
+  const [iecTStart, setIecTStart] = useState(30.0);
+  const [iecConsFactor, setIecConsFactor] = useState(1.0);
+  const [iecResult, setIecResult] = useState<IECLoadsResult | null>(null);
+  const [iecLoading, setIecLoading] = useState(false);
+  const [iecExcelLoading, setIecExcelLoading] = useState(false);
+  const [iecExpandedRows, setIecExpandedRows] = useState<Set<string>>(new Set());
+
+  const isIecTab = activeTab === 'iec-extreme' || activeTab === 'iec-fatigue' || activeTab === 'iec-statistics';
+
+  // Fetch simulations when IEC tab is first opened
+  useEffect(() => {
+    if (!isIecTab || !projectId || iecSimulations.length > 0) return;
+    ppGet<IECSimulationInfo[]>(projectId, 'iec-loads/simulations')
+      .then(setIecSimulations)
+      .catch(() => toast.error('Failed to load simulations'));
+  }, [isIecTab, projectId, iecSimulations.length]);
+
+  // Fetch cases when simulation changes
+  useEffect(() => {
+    if (!projectId || !iecSelectedSimId) {
+      setIecCasesGrouped([]);
+      return;
+    }
+    ppGet<IECCasesGrouped[]>(projectId, `iec-loads/simulations/${iecSelectedSimId}/cases`)
+      .then((groups) => {
+        setIecCasesGrouped(groups);
+        // Auto-select all DLCs
+        setIecSelectedDlcs(new Set(groups.map((g) => g.dlc_number)));
+      })
+      .catch(() => toast.error('Failed to load cases'));
+  }, [projectId, iecSelectedSimId]);
+
+  const handleIecAnalysis = useCallback(async () => {
+    if (!projectId || !iecSelectedSimId) return;
+    setIecLoading(true); setError(null); setIecResult(null);
+    try {
+      const dlcFilter = iecSelectedDlcs.size > 0 ? Array.from(iecSelectedDlcs) : undefined;
+      const result = await ppPost<IECLoadsResult>(projectId, 'iec-loads', {
+        simulation_id: iecSelectedSimId,
+        dlc_filter: dlcFilter,
+        t_start: iecTStart,
+        consequence_factor: iecConsFactor,
+      });
+      setIecResult(result);
+      toast.success(`IEC analysis complete: ${result.n_cases_analyzed} cases, ${result.channels_analyzed.length} channels`);
+    } catch { setError('IEC analysis failed'); toast.error('Failed'); }
+    finally { setIecLoading(false); }
+  }, [projectId, iecSelectedSimId, iecSelectedDlcs, iecTStart, iecConsFactor]);
+
+  const handleIecExcel = useCallback(async () => {
+    if (!projectId || !iecSelectedSimId) return;
+    setIecExcelLoading(true);
+    const dlcFilter = iecSelectedDlcs.size > 0 ? Array.from(iecSelectedDlcs) : undefined;
+    ppDownload(projectId, 'iec-loads/excel', {
+      simulation_id: iecSelectedSimId,
+      dlc_filter: dlcFilter,
+      t_start: iecTStart,
+      consequence_factor: iecConsFactor,
+    }, `IEC_Loads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setIecExcelLoading(false);
+  }, [projectId, iecSelectedSimId, iecSelectedDlcs, iecTStart, iecConsFactor]);
+
+  const toggleDlc = useCallback((dlc: string) => {
+    setIecSelectedDlcs((prev) => {
+      const next = new Set(prev);
+      if (next.has(dlc)) next.delete(dlc); else next.add(dlc);
+      return next;
+    });
+  }, []);
+
+  const toggleExpandRow = useCallback((key: string) => {
+    setIecExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   /* ---- handlers ---- */
   const handleFatigue = useCallback(async () => {
@@ -322,21 +479,24 @@ export default function PostProcessingPage() {
     ];
   }, [evResult]);
 
-  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : activeTab === 'damping' ? dLoading : evLoading;
-  const handleCompute = activeTab === 'fatigue' ? handleFatigue : activeTab === 'statistics' ? handleStats : activeTab === 'spectral' ? handleSpectral : activeTab === 'damping' ? handleDamping : handleExtremeValue;
+  const loading = activeTab === 'fatigue' ? fLoading : activeTab === 'statistics' ? sLoading : activeTab === 'spectral' ? spLoading : activeTab === 'damping' ? dLoading : activeTab === 'extremevalue' ? evLoading : iecLoading;
+  const handleCompute = activeTab === 'fatigue' ? handleFatigue : activeTab === 'statistics' ? handleStats : activeTab === 'spectral' ? handleSpectral : activeTab === 'damping' ? handleDamping : activeTab === 'extremevalue' ? handleExtremeValue : handleIecAnalysis;
 
   return (
     <div className="h-full flex flex-col">
       {/* Sub-tab bar */}
       <div className="flex items-center gap-1 border-b border-slate-700/50 px-4 py-2 bg-slate-900/30">
-        {TABS.map((tab) => {
+        {TABS.map((tab, idx) => {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
           return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${active ? 'bg-accent-500/20 text-accent-400 ring-1 ring-accent-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
-              <Icon className="w-3.5 h-3.5" />{tab.label}
-            </button>
+            <span key={tab.key} className="flex items-center">
+              {idx === 5 && <span className="mx-2 h-5 border-l border-slate-600/60" />}
+              <button onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${active ? (idx >= 5 ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30' : 'bg-accent-500/20 text-accent-400 ring-1 ring-accent-500/30') : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
+                <Icon className="w-3.5 h-3.5" />{tab.label}
+              </button>
+            </span>
           );
         })}
       </div>
@@ -421,10 +581,62 @@ export default function PostProcessingPage() {
               <NumberInput label="Threshold (\u03C3)" value={evThreshSigma} onChange={setEvThreshSigma} step={0.1} min={0.5} max={5} />
             </>}
 
-            <button onClick={handleCompute} disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-600 hover:bg-accent-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors mt-3">
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Computing...</> : 'Compute'}
-            </button>
+            {/* ===== IEC Loads Parameters ===== */}
+            {isIecTab && <>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Simulation</label>
+                <select value={iecSelectedSimId} onChange={(e) => setIecSelectedSimId(e.target.value)}
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 w-full focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+                  <option value="">Select simulation...</option>
+                  {iecSimulations.map((sim) => (
+                    <option key={sim.id} value={sim.id}>
+                      {sim.name} ({sim.completed_cases}/{sim.total_cases} cases)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {iecCasesGrouped.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">DLC Selection</label>
+                  <div className="space-y-1 max-h-40 overflow-y-auto bg-slate-900/40 rounded-lg p-2 border border-slate-700/40">
+                    {iecCasesGrouped.map((group) => (
+                      <button key={group.dlc_number} onClick={() => toggleDlc(group.dlc_number)}
+                        className={`flex items-center gap-2 w-full text-left px-2 py-1 rounded text-xs transition-colors ${iecSelectedDlcs.has(group.dlc_number) ? 'bg-amber-500/15 text-amber-300' : 'text-slate-400 hover:text-slate-200'}`}>
+                        {iecSelectedDlcs.has(group.dlc_number) ? <CheckSquare className="w-3.5 h-3.5 text-amber-400" /> : <Square className="w-3.5 h-3.5" />}
+                        <span className="font-mono">DLC {group.dlc_number}</span>
+                        <span className="text-slate-500 ml-auto">{group.completed_cases}/{group.total_cases}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <NumberInput label="Transient Skip" value={iecTStart} onChange={setIecTStart} step={5} min={0} max={120} unit="s" />
+              <NumberInput label="Consequence Factor" value={iecConsFactor} onChange={setIecConsFactor} step={0.05} min={1.0} max={1.3} />
+            </>}
+
+            {/* Compute / Run buttons */}
+            {!isIecTab && (
+              <button onClick={handleCompute} disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-600 hover:bg-accent-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors mt-3">
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Computing...</> : 'Compute'}
+              </button>
+            )}
+
+            {isIecTab && (
+              <div className="space-y-2 mt-3">
+                <button onClick={handleIecAnalysis} disabled={iecLoading || !iecSelectedSimId}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors">
+                  {iecLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Analyzing...</> : <><AlertTriangle className="w-4 h-4" />Run IEC Analysis</>}
+                </button>
+                <button onClick={handleIecExcel} disabled={iecExcelLoading || !iecSelectedSimId}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-700 hover:bg-green-600 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors">
+                  {iecExcelLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Download className="w-4 h-4" />Download Excel</>}
+                </button>
+              </div>
+            )}
+
             {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
 
             {/* DEL results summary */}
@@ -535,6 +747,39 @@ export default function PostProcessingPage() {
                 </div>
               </div>
             )}
+
+            {/* IEC analysis summary */}
+            {isIecTab && iecResult && (
+              <div className="mt-3 p-3 bg-slate-900/60 rounded-lg border border-amber-700/30">
+                <h4 className="text-xs font-semibold text-amber-300 mb-2">IEC Analysis Summary</h4>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Simulation</span>
+                    <span className="text-slate-200 font-mono text-[10px]">{iecResult.simulation_name}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Cases</span>
+                    <span className="text-amber-400 font-mono">{iecResult.n_cases_analyzed}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Channels</span>
+                    <span className="text-amber-400 font-mono">{iecResult.channels_analyzed.length}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Extreme rows</span>
+                    <span className="text-slate-300 font-mono">{iecResult.extreme_loads.length}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">DEL rows</span>
+                    <span className="text-slate-300 font-mono">{iecResult.del_table.length}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">DLCs</span>
+                    <span className="text-slate-300 font-mono text-[10px]">{Array.from(new Set(iecResult.case_summary.map((c) => c.dlc_number))).sort().join(', ')}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* -------- Right: Plots -------- */}
@@ -620,8 +865,172 @@ export default function PostProcessingPage() {
               </>
             )}
 
+            {/* ===== IEC EXTREME LOADS TABLE ===== */}
+            {activeTab === 'iec-extreme' && iecResult && iecResult.extreme_loads.length > 0 && (
+              <div className="bg-slate-800/30 rounded-xl border border-slate-700/30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-700/30 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-200">IEC Extreme Loads Table — {iecResult.n_cases_analyzed} cases</h3>
+                  <span className="text-[10px] text-slate-500">{iecResult.channels_analyzed.length} channels</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-800/60 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-slate-400 font-semibold">Channel</th>
+                        <th className="px-2 py-2 text-left text-slate-400 font-semibold">Unit</th>
+                        <th className="px-2 py-2 text-right text-green-400 font-semibold">Max Char.</th>
+                        <th className="px-2 py-2 text-right text-green-400 font-semibold">Max Design</th>
+                        <th className="px-2 py-2 text-center text-green-400 font-semibold">Max DLC</th>
+                        <th className="px-2 py-2 text-right text-green-400 font-semibold">Vhub</th>
+                        <th className="px-2 py-2 text-right text-red-400 font-semibold">Min Char.</th>
+                        <th className="px-2 py-2 text-right text-red-400 font-semibold">Min Design</th>
+                        <th className="px-2 py-2 text-center text-red-400 font-semibold">Min DLC</th>
+                        <th className="px-2 py-2 text-right text-red-400 font-semibold">Vhub</th>
+                        <th className="px-2 py-2 text-right text-slate-400 font-semibold">SF</th>
+                        <th className="px-2 py-2 text-center text-slate-400 font-semibold" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/30">
+                      {iecResult.extreme_loads.map((row) => {
+                        const rowKey = row.channel;
+                        const isExpanded = iecExpandedRows.has(rowKey);
+                        const concMax = iecResult.concurrent_loads.find(
+                          (cl) => cl.governing_channel === row.channel && cl.extreme_type === 'max'
+                        );
+                        return (
+                          <>
+                            <tr key={rowKey} className="hover:bg-slate-800/40 cursor-pointer" onClick={() => toggleExpandRow(rowKey)}>
+                              <td className="px-3 py-2 font-mono text-slate-200">{row.channel}</td>
+                              <td className="px-2 py-2 text-slate-400">{row.unit}</td>
+                              <td className="px-2 py-2 text-right font-mono text-green-300">{row.max_characteristic.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-right font-mono text-green-400 font-semibold">{row.max_design.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-center text-amber-400">{row.max_dlc}</td>
+                              <td className="px-2 py-2 text-right text-slate-300">{row.max_vhub.toFixed(1)}</td>
+                              <td className="px-2 py-2 text-right font-mono text-red-300">{row.min_characteristic.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-right font-mono text-red-400 font-semibold">{row.min_design.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-center text-amber-400">{row.min_dlc}</td>
+                              <td className="px-2 py-2 text-right text-slate-300">{row.min_vhub.toFixed(1)}</td>
+                              <td className="px-2 py-2 text-right text-slate-400">{row.safety_factor_max.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-center">
+                                {isExpanded ? <ChevronDown className="w-3 h-3 text-slate-500" /> : <ChevronRight className="w-3 h-3 text-slate-500" />}
+                              </td>
+                            </tr>
+                            {isExpanded && concMax && (
+                              <tr key={`${rowKey}-conc`} className="bg-slate-900/40">
+                                <td colSpan={12} className="px-6 py-2">
+                                  <div className="text-[10px] text-slate-500 mb-1">Concurrent loads at max of {row.channel}:</div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                    {Object.entries(concMax.timestep_values).slice(0, 20).map(([ch, val]) => (
+                                      <span key={ch} className="text-[10px]">
+                                        <span className="text-slate-400">{ch}:</span>{' '}
+                                        <span className="text-slate-200 font-mono">{val.toFixed(2)}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ===== IEC FATIGUE DEL TABLE ===== */}
+            {activeTab === 'iec-fatigue' && iecResult && iecResult.del_table.length > 0 && (
+              <div className="bg-slate-800/30 rounded-xl border border-slate-700/30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-700/30">
+                  <h3 className="text-sm font-semibold text-slate-200">IEC Fatigue DEL Table</h3>
+                  <p className="text-[10px] text-slate-500">Damage Equivalent Loads combined across fatigue DLC cases with probability weighting</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-800/60 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-slate-400 font-semibold">Channel</th>
+                        <th className="px-2 py-2 text-left text-slate-400 font-semibold">Unit</th>
+                        {iecResult.del_table[0] && Object.keys(iecResult.del_table[0].del_values)
+                          .sort((a, b) => parseFloat(a.split('=')[1]) - parseFloat(b.split('=')[1]))
+                          .map((mk) => (
+                            <th key={mk} className="px-2 py-2 text-right text-accent-400 font-semibold">{mk}</th>
+                          ))}
+                        <th className="px-2 py-2 text-right text-slate-400 font-semibold">N_eq</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/30">
+                      {iecResult.del_table.map((row) => (
+                        <tr key={row.channel} className="hover:bg-slate-800/40">
+                          <td className="px-3 py-2 font-mono text-slate-200">{row.channel}</td>
+                          <td className="px-2 py-2 text-slate-400">{row.unit}</td>
+                          {Object.keys(row.del_values)
+                            .sort((a, b) => parseFloat(a.split('=')[1]) - parseFloat(b.split('=')[1]))
+                            .map((mk) => (
+                              <td key={mk} className="px-2 py-2 text-right font-mono text-accent-300">
+                                {isNaN(row.del_values[mk]) ? 'N/A' : row.del_values[mk].toFixed(4)}
+                              </td>
+                            ))}
+                          <td className="px-2 py-2 text-right font-mono text-slate-400">{row.n_equivalent.toExponential(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ===== IEC STATISTICS TABLE ===== */}
+            {activeTab === 'iec-statistics' && iecResult && iecResult.statistics_table.length > 0 && (
+              <div className="bg-slate-800/30 rounded-xl border border-slate-700/30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-700/30">
+                  <h3 className="text-sm font-semibold text-slate-200">IEC Statistics Summary</h3>
+                  <p className="text-[10px] text-slate-500">Aggregated across {iecResult.n_cases_analyzed} simulation cases</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-800/60 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-slate-400 font-semibold">Channel</th>
+                        <th className="px-2 py-2 text-left text-slate-400 font-semibold">Unit</th>
+                        <th className="px-2 py-2 text-right text-slate-400 font-semibold">Mean</th>
+                        <th className="px-2 py-2 text-right text-slate-400 font-semibold">Std</th>
+                        <th className="px-2 py-2 text-right text-blue-400 font-semibold">Min</th>
+                        <th className="px-2 py-2 text-right text-green-400 font-semibold">Max</th>
+                        <th className="px-2 py-2 text-right text-amber-400 font-semibold">|Max|</th>
+                        <th className="px-2 py-2 text-right text-slate-400 font-semibold">Cases</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/30">
+                      {iecResult.statistics_table.map((row) => (
+                        <tr key={row.channel} className="hover:bg-slate-800/40">
+                          <td className="px-3 py-2 font-mono text-slate-200">{row.channel}</td>
+                          <td className="px-2 py-2 text-slate-400">{row.unit}</td>
+                          <td className="px-2 py-2 text-right font-mono text-slate-300">{row.mean.toFixed(4)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-slate-300">{row.std.toFixed(4)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-blue-300">{row.min_val.toFixed(4)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-green-300">{row.max_val.toFixed(4)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-amber-300">{row.abs_max.toFixed(4)}</td>
+                          <td className="px-2 py-2 text-right text-slate-400">{row.n_cases}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* IEC empty state */}
+            {isIecTab && !iecResult && !iecLoading && (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-500 text-sm gap-2">
+                <AlertTriangle className="w-8 h-8 text-slate-600" />
+                <span>Select a simulation, choose DLCs, and click <span className="text-amber-400 font-medium">Run IEC Analysis</span></span>
+              </div>
+            )}
+
             {/* Empty state */}
-            {!fResult && !sResult && !spResult && !dResult && !evResult && !loading && (
+            {!isIecTab && !fResult && !sResult && !spResult && !dResult && !evResult && !loading && (
               <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
                 Configure parameters and click <span className="text-accent-400 font-medium ml-1">Compute</span> to generate results.
               </div>

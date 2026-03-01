@@ -168,3 +168,150 @@ class ExtremeValueResponse(BaseModel):
     pot_threshold: float
     pot_peaks_t: list[float]
     pot_peaks_x: list[float]
+
+
+# ---------------------------------------------------------------------------
+# IEC Loads Analysis (real simulation data)
+# ---------------------------------------------------------------------------
+class IECLoadsRequest(BaseModel):
+    """Request to run IEC 61400-1 loads analysis on real simulation output files."""
+
+    simulation_id: str = Field(..., description="Simulation to analyze")
+    case_ids: list[str] | None = Field(
+        default=None,
+        description="Specific case IDs to include. None = all completed cases.",
+    )
+    dlc_filter: list[str] | None = Field(
+        default=None,
+        description="Filter by DLC numbers (e.g. ['1.1', '1.3']). None = all DLCs.",
+    )
+    channels: list[str] | None = Field(
+        default=None,
+        description="Specific channels to analyze. None = all common channels.",
+    )
+    t_start: float = Field(default=30.0, ge=0, description="Skip initial transient (s)")
+    wohler_exponents: list[float] = Field(
+        default=[3.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+        description="Wöhler exponents for fatigue DEL",
+    )
+    n_equivalent: float = Field(default=1e7, gt=0, description="Equivalent cycle count for DEL")
+    consequence_factor: float = Field(
+        default=1.0,
+        ge=1.0,
+        le=1.3,
+        description="Consequence of failure factor γn (IEC Table 3)",
+    )
+
+
+class IECExtremeLoadRow(BaseModel):
+    """A single row in the IEC extreme loads table."""
+
+    channel: str
+    unit: str
+    max_characteristic: float
+    max_design: float
+    max_dlc: str
+    max_vhub: float
+    max_time: float
+    max_case_id: str
+    min_characteristic: float
+    min_design: float
+    min_dlc: str
+    min_vhub: float
+    min_time: float
+    min_case_id: str
+    safety_factor_max: float
+    safety_factor_min: float
+
+
+class IECConcurrentLoadEntry(BaseModel):
+    """Concurrent loads at the timestep of a governing extreme."""
+
+    governing_channel: str
+    extreme_type: str  # "max" or "min"
+    timestep_values: dict[str, float]
+
+
+class IECDELRow(BaseModel):
+    """A single row in the fatigue DEL table."""
+
+    channel: str
+    unit: str
+    del_values: dict[str, float]  # "m=3" -> value
+    n_equivalent: float
+
+
+class IECStatisticsRow(BaseModel):
+    """A single row in the statistics summary table."""
+
+    channel: str
+    unit: str
+    mean: float
+    std: float
+    min_val: float
+    max_val: float
+    abs_max: float
+    n_cases: int
+
+
+class IECCaseSummaryRow(BaseModel):
+    """Summary of a simulation case included in the analysis."""
+
+    case_id: str
+    dlc_number: str
+    wind_speed: float
+    seed_number: int
+    yaw_misalignment: float
+    analysis_type: str
+    safety_factor: float
+    probability_weight: float
+
+
+class IECLoadsResponse(BaseModel):
+    """Full IEC loads analysis response with all tables."""
+
+    simulation_id: str
+    simulation_name: str
+    n_cases_analyzed: int
+    channels_analyzed: list[str]
+    extreme_loads: list[IECExtremeLoadRow]
+    concurrent_loads: list[IECConcurrentLoadEntry]
+    del_table: list[IECDELRow]
+    statistics_table: list[IECStatisticsRow]
+    case_summary: list[IECCaseSummaryRow]
+
+
+class IECSimulationInfo(BaseModel):
+    """Simulation info for the selector dropdown."""
+
+    id: str
+    name: str
+    status: str
+    total_cases: int
+    completed_cases: int
+    failed_cases: int
+    dlc_numbers: list[str]
+    created_at: str
+
+
+class IECCaseInfo(BaseModel):
+    """Case info for the case selector."""
+
+    case_id: str
+    dlc_number: str
+    wind_speed: float
+    seed_number: int
+    yaw_misalignment: float
+    analysis_type: str
+    safety_factor: float
+    probability_weight: float
+    status: str
+
+
+class IECCasesGrouped(BaseModel):
+    """Cases grouped by DLC number."""
+
+    dlc_number: str
+    cases: list[IECCaseInfo]
+    total_cases: int
+    completed_cases: int
