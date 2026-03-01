@@ -28,7 +28,6 @@ from welib.airfoils.DynamicStall import (
     dynstall_mhh_param_from_polar,
     dynstall_oye_param_from_polar,
 )
-from welib.airfoils.naca import naca_shape
 from welib.airfoils.Polar import Polar
 
 logger = logging.getLogger("windforge.airfoil")
@@ -249,21 +248,70 @@ def compute_dynamic_stall_params(
 # ---------------------------------------------------------------------------
 # 4. NACA profile generation
 # ---------------------------------------------------------------------------
+def _naca4_profile(digits: str, n_points: int = 100) -> tuple:
+    """Full NACA 4-digit airfoil generator supporting symmetric and cambered.
+
+    Standard NACA 4-digit equations:
+      - 1st digit: max camber (% chord)
+      - 2nd digit: location of max camber (tenths of chord)
+      - 3rd-4th digits: max thickness (% chord)
+
+    Returns (x, y_upper, y_lower) arrays each of length n_points.
+    """
+    if len(digits) != 4:
+        raise ValueError(f"Expected 4-digit NACA designation, got '{digits}'")
+
+    max_camb = int(digits[0]) / 100.0       # max camber as fraction of chord
+    p = int(digits[1]) / 10.0               # location of max camber
+    t = int(digits[2:4]) / 100.0            # max thickness as fraction of chord
+
+    # Cosine-spaced x distribution for better LE resolution
+    beta = np.linspace(0, np.pi, n_points)
+    x = 0.5 * (1.0 - np.cos(beta))
+
+    # Thickness distribution (standard NACA formula)
+    yt = 5.0 * t * (
+        0.2969 * np.sqrt(x)
+        - 0.1260 * x
+        - 0.3516 * x**2
+        + 0.2843 * x**3
+        - 0.1015 * x**4
+    )
+
+    if max_camb == 0 or p == 0:
+        # Symmetric airfoil
+        y_upper = yt
+        y_lower = -yt
+    else:
+        # Cambered airfoil — compute camber line
+        yc = np.where(
+            x <= p,
+            (max_camb / p**2) * (2 * p * x - x**2),
+            (max_camb / (1 - p)**2) * ((1 - 2 * p) + 2 * p * x - x**2),
+        )
+        dyc_dx = np.where(
+            x <= p,
+            (2 * max_camb / p**2) * (p - x),
+            (2 * max_camb / (1 - p)**2) * (p - x),
+        )
+        theta = np.arctan(dyc_dx)
+
+        y_upper = yc + yt * np.cos(theta)
+        y_lower = yc - yt * np.cos(theta)
+
+    return x, y_upper, y_lower
+
+
 def generate_naca_profile(
     digits: str = "0012",
     n_points: int = 100,
 ) -> dict:
-    """Generate NACA 4-digit airfoil coordinates.
-
-    welib signature:
-      naca_shape(digits, chord=1, n=151, thickTEZero=False, pitch=0, xrot=0.25)
-      Returns (x, y) where the profile goes around the airfoil:
-        upper surface (LE to TE) then lower surface (TE to LE).
+    """Generate NACA 4-digit airfoil coordinates (symmetric or cambered).
 
     Parameters
     ----------
     digits : str
-        NACA 4-digit designation (e.g. "0012", "2412").
+        NACA 4-digit designation (e.g. "0012", "2412", "4415").
     n_points : int
         Number of points per surface.
 
@@ -271,24 +319,10 @@ def generate_naca_profile(
     -------
     dict with keys: x, y_upper, y_lower
     """
-    # naca_shape returns a wrap-around profile: upper (0->1) then lower (1->0)
-    # Total points = 2 * n_points
-    x_full, y_full = naca_shape(digits, n=n_points)
-
-    # Split into upper and lower surfaces
-    # Upper surface: first n_points values (x: 0 -> 1)
-    # Lower surface: last n_points values (x: 1 -> 0, reversed)
-    x_upper = x_full[:n_points]
-    y_upper = y_full[:n_points]
-    x_lower = x_full[n_points:]
-    y_lower = y_full[n_points:]
-
-    # Reverse lower surface so x goes 0 -> 1 (same direction as upper)
-    x_lower = x_lower[::-1]
-    y_lower = y_lower[::-1]
+    x, y_upper, y_lower = _naca4_profile(digits, n_points)
 
     return {
-        "x": x_upper.tolist(),
+        "x": x.tolist(),
         "y_upper": y_upper.tolist(),
         "y_lower": y_lower.tolist(),
     }

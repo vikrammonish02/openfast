@@ -46,6 +46,191 @@ async def _seed_default_user():
         logger.info("Default user created: admin@windforge.app")
 
 
+async def _seed_airfoils():
+    """Seed airfoil polar data from reference files + generated FFA-W3 polars.
+
+    Runs on every startup — skips if airfoils already exist.
+    """
+    from app.models.components import Airfoil
+    from app.models.user import Organization
+    from app.openfast.reference_parser import list_airfoils
+
+    async with async_session_factory() as session:
+        # Check if airfoils already exist
+        result = await session.execute(select(Airfoil).limit(1))
+        if result.scalar_one_or_none() is not None:
+            return  # Already seeded
+
+        # Get org_id
+        result = await session.execute(select(Organization).limit(1))
+        org = result.scalar_one_or_none()
+        if org is None:
+            return
+        org_id = org.id
+
+        count = 0
+
+        # 1) Seed from NREL-5MW reference airfoil files
+        try:
+            ref_airfoils = list_airfoils("NREL-5MW")
+            for af_data in ref_airfoils:
+                name = af_data["name"]
+                alpha = af_data.get("alpha", [])
+                cl = af_data.get("cl", [])
+                cd = af_data.get("cd", [])
+                cm = af_data.get("cm", [])
+                if not alpha or not cl or not cd:
+                    continue
+
+                # Determine family and thickness
+                family = None
+                thickness = None
+                if "Cylinder" in name:
+                    family = "Cylinder"
+                    thickness = 1.0
+                elif "DU" in name:
+                    family = "DU"
+                    # Extract thickness from name like DU21_A17 → 0.21
+                    import re as _re
+                    m = _re.search(r"DU(\d+)", name)
+                    if m:
+                        thickness = int(m.group(1)) / 100.0
+                elif "NACA" in name:
+                    family = "NACA"
+                    thickness = 0.18
+
+                airfoil = Airfoil(
+                    org_id=org_id,
+                    name=name,
+                    family=family,
+                    thickness_ratio=thickness,
+                    polars=[{
+                        "re": 1e6,
+                        "alpha": alpha,
+                        "cl": cl,
+                        "cd": cd,
+                        "cm": cm,
+                    }],
+                    source="NREL-5MW reference",
+                )
+                session.add(airfoil)
+                count += 1
+        except Exception as exc:
+            logger.warning("Failed to seed NREL-5MW airfoils: %s", exc)
+
+        # 2) Seed IEA-15MW FFA-W3 airfoils (generated from thickness-based NACA approximation)
+        _ffa_airfoils = _generate_ffa_w3_polars()
+        for af_data in _ffa_airfoils:
+            airfoil = Airfoil(
+                org_id=org_id,
+                name=af_data["name"],
+                family="FFA-W3",
+                thickness_ratio=af_data["thickness"],
+                polars=[{
+                    "re": 1e6,
+                    "alpha": af_data["alpha"],
+                    "cl": af_data["cl"],
+                    "cd": af_data["cd"],
+                    "cm": af_data["cm"],
+                }],
+                source=af_data["source"],
+            )
+            session.add(airfoil)
+            count += 1
+
+        await session.commit()
+        logger.info("Seeded %d airfoils with polar data", count)
+
+
+def _generate_ffa_w3_polars() -> list[dict]:
+    """Generate approximate polar data for FFA-W3 family airfoils.
+
+    Uses welib's thin airfoil theory with thickness corrections.
+    The FFA-W3-xxx naming means xxx/10 = thickness in %.
+    """
+    import numpy as np
+
+    # FFA-W3 airfoils used by IEA-15MW reference blade
+    ffa_specs = [
+        {"name": "Cylinder", "thickness": 1.0, "source": "Cylinder (t/c=100%)"},
+        {"name": "FFA_W3_600", "thickness": 0.60, "source": "FFA-W3-600 approx (t/c=60%)"},
+        {"name": "FFA_W3_480", "thickness": 0.48, "source": "FFA-W3-480 approx (t/c=48%)"},
+        {"name": "FFA_W3_360", "thickness": 0.36, "source": "FFA-W3-360 approx (t/c=36%)"},
+        {"name": "FFA_W3_301", "thickness": 0.301, "source": "FFA-W3-301 approx (t/c=30.1%)"},
+        {"name": "FFA_W3_241", "thickness": 0.241, "source": "FFA-W3-241 approx (t/c=24.1%)"},
+        {"name": "FFA_W3_211", "thickness": 0.211, "source": "FFA-W3-211 approx (t/c=21.1%)"},
+        {"name": "NACA_64_618", "thickness": 0.18, "source": "NACA 64-618 approx (t/c=18%)"},
+    ]
+
+    results = []
+    for spec in ffa_specs:
+        tc = spec["thickness"]
+        alpha_deg = np.arange(-10.0, 30.5, 0.5).tolist()
+
+        if tc >= 0.9:
+            # Pure cylinder — zero lift, constant drag
+            cl = [0.0] * len(alpha_deg)
+            cd = [1.2] * len(alpha_deg)
+            cm = [0.0] * len(alpha_deg)
+        elif tc >= 0.5:
+            # Thick transitional section — reduced lift, high drag
+            cl_slope = 2 * np.pi * (1 - tc) * 0.6  # heavily reduced
+            cd_min = 0.02 + 0.8 * tc  # high parasitic drag
+            cl = []
+            cd = []
+            cm = []
+            for a in alpha_deg:
+                a_rad = np.radians(a)
+                cl_val = cl_slope * a_rad
+                # Stall around 8 degrees
+                if abs(a) > 8:
+                    cl_val = cl_val * np.exp(-0.05 * (abs(a) - 8) ** 2)
+                cl.append(round(float(cl_val), 6))
+                cd.append(round(float(cd_min + 0.005 * a_rad**2), 6))
+                cm.append(round(float(-0.02 * a_rad), 6))
+        else:
+            # Standard thick airfoil — use thin airfoil theory with corrections
+            cl_slope = 2 * np.pi * (1 + 0.77 * tc)  # thickness correction
+            alpha_zl = -2.0 * tc * 10  # zero-lift angle shifts with camber
+            cd_min = 0.006 + 0.15 * tc**2  # drag increases with thickness
+            cl_max = 1.2 + 0.5 * (0.21 - tc) if tc < 0.30 else 0.8
+            alpha_stall = 12.0 - 15 * tc  # stall earlier for thick airfoils
+
+            cl = []
+            cd = []
+            cm = []
+            for a in alpha_deg:
+                a_eff = a - alpha_zl
+                a_rad = np.radians(a_eff)
+                cl_val = cl_slope * a_rad
+
+                # Smooth stall model
+                if a_eff > alpha_stall:
+                    excess = a_eff - alpha_stall
+                    cl_val = cl_max * np.exp(-0.08 * excess**1.5)
+                elif a_eff < -alpha_stall:
+                    excess = -a_eff - alpha_stall
+                    cl_val = -cl_max * np.exp(-0.08 * excess**1.5)
+
+                # Drag bucket + induced drag
+                cd_val = cd_min + 0.01 * a_rad**2 + 0.005 * max(0, abs(a_eff) - 5) ** 2 * 0.001
+
+                # Moment coefficient
+                cm_val = -0.05 - 0.02 * a_rad
+
+                cl.append(round(float(cl_val), 6))
+                cd.append(round(float(cd_val), 6))
+                cm.append(round(float(cm_val), 6))
+
+        spec["alpha"] = alpha_deg
+        spec["cl"] = cl
+        spec["cd"] = cd
+        spec["cm"] = cm
+        results.append(spec)
+
+    return results
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler — startup and shutdown logic."""
@@ -78,6 +263,7 @@ async def lifespan(app: FastAPI):
 
         await create_tables()
         await _seed_default_user()
+        await _seed_airfoils()
 
     yield
 
