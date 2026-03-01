@@ -52,8 +52,9 @@ interface JonswapResult {
 interface WaveKinematicsResult {
   time: number[];
   elevation: number[];
-  depths: number[];
-  velocity_x: number[][];  // depths x time
+  z_positions: number[];
+  velocity: number[][];    // z_positions x time
+  acceleration: number[][]; // z_positions x time
 }
 
 interface MorisonResult {
@@ -195,8 +196,8 @@ export default function HydroPage() {
     setJonswapResult(null);
     try {
       const result = await hydroPost<JonswapResult>(projectId, 'jonswap-spectrum', {
-        hs: jonswapHs,
-        tp: jonswapTp,
+        Hs: jonswapHs,
+        Tp: jonswapTp,
       });
       setJonswapResult(result);
       toast.success('JONSWAP spectrum computed');
@@ -216,10 +217,10 @@ export default function HydroPage() {
     setKinResult(null);
     try {
       const result = await hydroPost<WaveKinematicsResult>(projectId, 'wave-kinematics', {
-        hs: kinHs,
-        tp: kinTp,
+        Hs: kinHs,
+        Tp: kinTp,
         water_depth: kinDepth,
-        duration: kinDuration,
+        time_duration: kinDuration,
       });
       setKinResult(result);
       toast.success('Wave kinematics computed');
@@ -239,12 +240,12 @@ export default function HydroPage() {
     setMorResult(null);
     try {
       const result = await hydroPost<MorisonResult>(projectId, 'morison-loads', {
-        hs: morHs,
-        tp: morTp,
+        Hs: morHs,
+        Tp: morTp,
         water_depth: morDepth,
         monopile_diameter: morDiameter,
-        cd: morCd,
-        cm: morCm,
+        Cd: morCd,
+        Cm: morCm,
       });
       setMorResult(result);
       toast.success('Morison loads computed');
@@ -267,7 +268,7 @@ export default function HydroPage() {
         radius: hsRadius,
         z_bottom: hsZBottom,
         z_top: hsZTop,
-        mass: hsMass,
+        mass_structure: hsMass,
       });
       setHsResult(result);
       toast.success('Hydrostatic properties computed');
@@ -348,8 +349,8 @@ export default function HydroPage() {
     return [
       {
         x: kinResult.time,
-        y: kinResult.depths,
-        z: kinResult.velocity_x,
+        y: kinResult.z_positions,
+        z: kinResult.velocity,
         type: 'heatmap' as const,
         colorscale: 'Viridis',
         colorbar: {

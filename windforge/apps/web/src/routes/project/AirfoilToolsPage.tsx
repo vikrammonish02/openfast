@@ -52,11 +52,9 @@ interface Correction3DResult {
 }
 
 interface NACAResult {
-  x_upper: number[];
+  x: number[];
   y_upper: number[];
-  x_lower: number[];
   y_lower: number[];
-  name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +206,7 @@ export default function AirfoilToolsPage() {
       const res = await api.post<NACAResult>(
         `/projects/${projectId}/airfoil-tools/generate-naca`,
         {
-          naca_digits: nacaDigits.trim(),
+          digits: nacaDigits.trim(),
           n_points: nacaNPoints,
         },
       );
@@ -361,7 +359,7 @@ export default function AirfoilToolsPage() {
     if (!nacaResult) return [];
     return [
       {
-        x: nacaResult.x_upper,
+        x: nacaResult.x,
         y: nacaResult.y_upper,
         type: 'scatter' as const,
         mode: 'lines' as const,
@@ -369,7 +367,7 @@ export default function AirfoilToolsPage() {
         line: { color: '#3b82f6', width: 2 },
       },
       {
-        x: nacaResult.x_lower,
+        x: nacaResult.x,
         y: nacaResult.y_lower,
         type: 'scatter' as const,
         mode: 'lines' as const,
@@ -383,7 +381,7 @@ export default function AirfoilToolsPage() {
     () => ({
       ...basePlotLayout,
       title: {
-        text: nacaResult ? `NACA ${nacaResult.name}` : 'NACA Airfoil',
+        text: nacaResult ? `NACA ${nacaDigits}` : 'NACA Airfoil',
         font: { size: 12, color: '#e2e8f0' },
       },
       xaxis: {
@@ -397,7 +395,7 @@ export default function AirfoilToolsPage() {
         ...gridStyle,
       },
     }),
-    [nacaResult],
+    [nacaResult, nacaDigits],
   );
 
   const plotConfig = {

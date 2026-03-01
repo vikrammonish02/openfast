@@ -4,10 +4,35 @@ from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Polar analysis
+# Polar analysis (by airfoil_id from DB)
+# ---------------------------------------------------------------------------
+class PolarAnalysisByIdRequest(BaseModel):
+    """Request body for airfoil polar analysis using a DB airfoil_id."""
+
+    airfoil_id: str = Field(..., description="Airfoil ID (UUID or name)")
+    re: float | None = Field(default=None, gt=0, description="Reynolds number (picks first if omitted)")
+
+
+class PolarAnalysisByIdResponse(BaseModel):
+    """Response body for polar analysis — includes full arrays for plotting."""
+
+    alpha_deg: list[float]
+    cl: list[float]
+    cd: list[float]
+    cm: list[float]
+    cl_cd: list[float]
+    cl_max: float
+    alpha_stall: float
+    cl_cd_max: float
+    alpha_0: float
+    linear_slope: float
+
+
+# ---------------------------------------------------------------------------
+# Polar analysis (raw arrays)
 # ---------------------------------------------------------------------------
 class PolarAnalysisRequest(BaseModel):
-    """Request body for airfoil polar analysis."""
+    """Request body for airfoil polar analysis with raw arrays."""
 
     alpha: list[float] = Field(..., description="Angle of attack (deg)")
     cl: list[float] = Field(..., description="Lift coefficient array")
@@ -41,7 +66,29 @@ class PolarAnalysisResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 3-D correction
+# 3-D correction (by airfoil_id from DB)
+# ---------------------------------------------------------------------------
+class Correction3DByIdRequest(BaseModel):
+    """Request body for 3-D rotational correction using a DB airfoil_id."""
+
+    airfoil_id: str = Field(..., description="Airfoil ID (UUID or name)")
+    r_over_R: float = Field(..., gt=0, le=1.0, description="r/R — local radius / rotor radius")
+    c_over_R: float = Field(default=0.1, gt=0, description="c/R — chord / rotor radius")
+    tsr: float = Field(default=7.0, gt=0, description="Tip-speed ratio")
+
+
+class Correction3DByIdResponse(BaseModel):
+    """Response body for 3-D correction with original + corrected polars."""
+
+    alpha_deg: list[float]
+    cl_original: list[float]
+    cd_original: list[float]
+    cl_corrected: list[float]
+    cd_corrected: list[float]
+
+
+# ---------------------------------------------------------------------------
+# 3-D correction (raw arrays)
 # ---------------------------------------------------------------------------
 class Correction3DRequest(BaseModel):
     """Request body for 3-D rotational correction."""

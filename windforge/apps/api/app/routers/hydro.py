@@ -123,7 +123,6 @@ async def morison_loads(
         body.Cd,
         body.Cm,
         body.time_duration,
-        body.n_freq,
     )
 
     return MorisonResponse(**result)
