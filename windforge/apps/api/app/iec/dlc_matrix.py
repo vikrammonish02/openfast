@@ -134,6 +134,12 @@ class DLCTemplate:
     wind_speed_range: str = "Vin_to_Vout"
     simulation_length: float = 600.0
     init_length: float = 200.0
+    # --- WEIS-enhanced fields ---
+    sea_state: str = "NSS"          # NSS, SSS, ESS, fatigue, 1yr, 50yr
+    iec_wind_type: str = "NTM"      # TurbSim IEC wind type string
+    wind_profile_type: str = "IEC"  # IEC, LOG, PL, JET
+    n_azimuth: int = 1              # Azimuth positions (>1 for transients)
+    shutdown_time: Optional[float] = None  # Shutdown trigger time (s)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +162,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-8.0, 0.0, 8.0),
         wind_speed_range="Vin_to_Vout",
         simulation_length=600.0,
+        iec_wind_type="NTM",
     ),
     DLCTemplate(
         number="1.2",
@@ -169,6 +176,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-8.0, 0.0, 8.0),
         wind_speed_range="Vin_to_Vout",
         simulation_length=600.0,
+        iec_wind_type="NTM",
     ),
     DLCTemplate(
         number="1.3",
@@ -182,6 +190,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-8.0, 0.0, 8.0),
         wind_speed_range="Vin_to_Vout",
         simulation_length=600.0,
+        iec_wind_type="1ETM",
     ),
     DLCTemplate(
         number="1.4",
@@ -197,6 +206,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vr-2_Vr_Vr+2",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # ECD is handled via InflowWind, not TurbSim
     ),
     DLCTemplate(
         number="1.5",
@@ -211,6 +221,22 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vin_to_Vout",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # EWS via InflowWind
+    ),
+    DLCTemplate(
+        number="1.6",
+        description="Power production - NTM + Severe Sea State (offshore)",
+        group=DLCGroup.POWER_PRODUCTION,
+        wind_model=WindModel.NTM,
+        operating_condition=OperatingCondition.POWER_PRODUCTION,
+        analysis_type=AnalysisType.ULTIMATE,
+        default_safety_factor=1.35,
+        default_num_seeds=6,
+        default_yaw_set=(-8.0, 0.0, 8.0),
+        wind_speed_range="Vin_to_Vout",
+        simulation_length=600.0,
+        iec_wind_type="NTM",
+        sea_state="SSS",
     ),
 
     # ===================================================================
@@ -229,6 +255,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         fault_type=FaultType.CONTROL_SYSTEM,
         default_yaw_set=(0.0,),
         wind_speed_range="Vin_to_Vout",
+        iec_wind_type="NTM",
     ),
     DLCTemplate(
         number="2.2",
@@ -243,6 +270,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         fault_type=FaultType.PROTECTION_SYSTEM,
         default_yaw_set=(0.0,),
         wind_speed_range="Vin_to_Vout",
+        iec_wind_type="NTM",
     ),
     DLCTemplate(
         number="2.3",
@@ -260,6 +288,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vr-2_Vr_Vr+2_Vout",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # EOG via InflowWind
     ),
     DLCTemplate(
         number="2.4",
@@ -274,6 +303,7 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         fault_type=FaultType.CONTROL_SYSTEM,
         default_yaw_set=(0.0,),
         wind_speed_range="Vin_to_Vout",
+        iec_wind_type="NTM",
     ),
 
     # ===================================================================
@@ -293,6 +323,9 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vin_Vr_Vout",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",
+        wind_profile_type="IEC",
+        n_azimuth=3,
     ),
     DLCTemplate(
         number="3.2",
@@ -308,6 +341,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vin_Vr-2_Vr_Vr+2",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # EOG via InflowWind
+        n_azimuth=3,
     ),
     DLCTemplate(
         number="3.3",
@@ -323,6 +358,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vin_Vr-2_Vr_Vr+2",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # EDC via InflowWind
+        n_azimuth=3,
     ),
 
     # ===================================================================
@@ -342,6 +379,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vr-2_Vr_Vr+2_Vout",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",
+        n_azimuth=3,
     ),
     DLCTemplate(
         number="4.2",
@@ -357,6 +396,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vr-2_Vr_Vr+2_Vout",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",  # EOG via InflowWind
+        n_azimuth=3,
     ),
 
     # ===================================================================
@@ -376,6 +417,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         wind_speed_range="Vr-2_Vr_Vr+2",
         simulation_length=60.0,
         init_length=0.0,
+        iec_wind_type="NTM",
+        shutdown_time=20.0,
     ),
 
     # ===================================================================
@@ -394,6 +437,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-8.0, 0.0, 8.0),
         special_wind_speed="Ve50",
         wind_speed_range="Ve50",
+        iec_wind_type="1EWM50",
+        sea_state="50yr",
     ),
     DLCTemplate(
         number="6.2",
@@ -410,6 +455,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-180.0, -30.0, 0.0, 30.0, 180.0),
         special_wind_speed="Ve50",
         wind_speed_range="Ve50",
+        iec_wind_type="1EWM50",
+        sea_state="50yr",
     ),
     DLCTemplate(
         number="6.3",
@@ -424,6 +471,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-20.0, 0.0, 20.0),
         special_wind_speed="Ve1",
         wind_speed_range="Ve1",
+        iec_wind_type="1EWM1",
+        sea_state="1yr",
     ),
     DLCTemplate(
         number="6.4",
@@ -436,6 +485,22 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_num_seeds=6,
         default_yaw_set=(-8.0, 0.0, 8.0),
         wind_speed_range="Vin_to_Vout",
+        iec_wind_type="NTM",
+    ),
+    DLCTemplate(
+        number="6.5",
+        description="Parked - 1-yr extreme sea state (offshore)",
+        group=DLCGroup.PARKED,
+        wind_model=WindModel.EWM,
+        operating_condition=OperatingCondition.PARKED_STANDING_STILL,
+        analysis_type=AnalysisType.ULTIMATE,
+        default_safety_factor=1.35,
+        default_num_seeds=6,
+        default_yaw_set=(-20.0, 0.0, 20.0),
+        special_wind_speed="Ve1",
+        wind_speed_range="Ve1",
+        iec_wind_type="1EWM1",
+        sea_state="ESS",
     ),
 
     # ===================================================================
@@ -456,6 +521,8 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(-180.0, -30.0, 0.0, 30.0, 180.0),
         special_wind_speed="Ve1",
         wind_speed_range="Ve1",
+        iec_wind_type="1EWM1",
+        sea_state="1yr",
     ),
 
     # ===================================================================
@@ -473,6 +540,26 @@ IEC_DLC_TABLE: list[DLCTemplate] = [
         default_yaw_set=(0.0,),
         special_wind_speed="Vmaint",
         wind_speed_range="Vmaint",
+        iec_wind_type="NTM",
+    ),
+
+    # ===================================================================
+    # 12. Transport / Installation (WEIS-specific)
+    # ===================================================================
+    DLCTemplate(
+        number="12.1",
+        description="Installation - WEIS transport/installation load case",
+        group=DLCGroup.TRANSPORT,
+        wind_model=WindModel.EWM,
+        operating_condition=OperatingCondition.TRANSPORT_ASSEMBLY_MAINTENANCE,
+        analysis_type=AnalysisType.ULTIMATE,
+        default_safety_factor=1.5,
+        default_num_seeds=1,
+        default_yaw_set=(0.0,),
+        special_wind_speed="Vmaint",
+        wind_speed_range="Vmaint",
+        iec_wind_type="NTM",
+        sea_state="1yr",
     ),
 ]
 

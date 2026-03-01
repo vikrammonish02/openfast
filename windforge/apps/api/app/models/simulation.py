@@ -40,6 +40,9 @@ class DLCDefinition(Base):
     # TurbSim configuration
     turbsim_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # WEIS metocean conditions — correlated wind-wave table
+    metocean_conditions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     total_case_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[DLCStatus] = mapped_column(
         Enum(DLCStatus, name="dlc_status", create_constraint=False, native_enum=False),
@@ -159,6 +162,21 @@ class SimulationCase(Base):
     wind_speed: Mapped[float] = mapped_column(Float, nullable=False)  # m/s
     seed_number: Mapped[int] = mapped_column(Integer, nullable=False)
     yaw_misalignment: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)  # deg
+
+    # --- WEIS-enhanced per-case fields ---
+    wave_hs: Mapped[float | None] = mapped_column(Float, nullable=True)  # m
+    wave_tp: Mapped[float | None] = mapped_column(Float, nullable=True)  # s
+    wave_dir: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)  # deg
+    wave_seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wave_gamma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iec_wind_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default="NTM")
+    wind_profile_type: Mapped[str | None] = mapped_column(String(10), nullable=True, default="IEC")
+    azimuth_deg: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
+    probability_weight: Mapped[float | None] = mapped_column(Float, nullable=True, default=1.0)
+    initial_rotor_speed: Mapped[float | None] = mapped_column(Float, nullable=True)  # rpm
+    initial_blade_pitch: Mapped[float | None] = mapped_column(Float, nullable=True)  # deg
+    shutdown_time: Mapped[float | None] = mapped_column(Float, nullable=True)  # s
+    analysis_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default="ultimate")
 
     wind_field_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     input_files: Mapped[dict | None] = mapped_column(JSON, nullable=True)

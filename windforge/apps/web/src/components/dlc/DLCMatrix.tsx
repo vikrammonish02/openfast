@@ -46,6 +46,21 @@ interface DLCCaseSpec {
   init_length: number;
   description: string;
   is_custom: boolean;
+  // WEIS-enhanced fields
+  sea_state: string;
+  wave_hs: number[] | null;
+  wave_tp: number[] | null;
+  wave_gamma: number[] | null;
+  wave_dir: number;
+  wave_seed_start: number;
+  n_wave_seeds: number;
+  iec_wind_type: string;
+  wind_profile_type: string;
+  n_azimuth: number;
+  azimuth_init: number;
+  shutdown_time: number | null;
+  probability_weight: number;
+  initial_conditions: { rotor_speed: number[]; blade_pitch: number[]; wind_speed: number[] } | null;
 }
 
 interface TurbSimParams {
@@ -61,6 +76,19 @@ interface TurbSimParams {
   ref_height: number;
 }
 
+interface MetoceanConditions {
+  wind_speeds: number[];
+  wave_hs_nss: number[];
+  wave_tp_nss: number[];
+  wave_hs_sss: number[] | null;
+  wave_tp_sss: number[] | null;
+  wave_hs_ess: number[] | null;
+  wave_tp_ess: number[] | null;
+  wave_gamma: number[] | null;
+  water_depth: number;
+  current_speed: number;
+}
+
 interface DLCDefinition {
   id: string;
   project_id: string;
@@ -68,6 +96,7 @@ interface DLCDefinition {
   name: string;
   dlc_cases: DLCCaseSpec[] | null;
   turbsim_params: TurbSimParams | null;
+  metocean_conditions: MetoceanConditions | null;
   total_case_count: number;
   status: string;
   created_at: string;
@@ -105,38 +134,47 @@ interface DLCMeta {
   faultCondition: string;
   simulationLength: number;
   initLength: number;
+  // WEIS defaults
+  seaState: string;
+  iecWindType: string;
+  windProfileType: string;
+  nAzimuth: number;
+  shutdownTime: number | null;
 }
 
 const DLC_CATALOG: DLCMeta[] = [
   // 1. Power production
-  { number: '1.1', group: 'power_production', description: 'Normal turbulence', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.25, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200 },
-  { number: '1.2', group: 'power_production', description: 'Normal turbulence (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200 },
-  { number: '1.3', group: 'power_production', description: 'Extreme turbulence model', windModel: 'ETM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200 },
-  { number: '1.4', group: 'power_production', description: 'Extreme coherent gust + dir change', windModel: 'ECD', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0 },
-  { number: '1.5', group: 'power_production', description: 'Extreme wind shear', windModel: 'EWS', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 60, initLength: 0 },
+  { number: '1.1', group: 'power_production', description: 'Normal turbulence', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.25, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '1.2', group: 'power_production', description: 'Normal turbulence (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '1.3', group: 'power_production', description: 'Extreme turbulence model', windModel: 'ETM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: '1ETM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '1.4', group: 'power_production', description: 'Extreme coherent gust + dir change', windModel: 'ECD', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '1.5', group: 'power_production', description: 'Extreme wind shear', windModel: 'EWS', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '1.6', group: 'power_production', description: 'NTM + Severe Sea State (offshore)', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'SSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
   // 2. Power production + fault
-  { number: '2.1', group: 'power_prod_fault', description: 'Control system fault', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'control', simulationLength: 600, initLength: 200 },
-  { number: '2.2', group: 'power_prod_fault', description: 'Protection / internal electrical fault', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'protection', simulationLength: 600, initLength: 200 },
-  { number: '2.3', group: 'power_prod_fault', description: 'EOG + external electrical fault', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'electrical', simulationLength: 60, initLength: 0 },
-  { number: '2.4', group: 'power_prod_fault', description: 'NTM with fault (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'control', simulationLength: 600, initLength: 200 },
+  { number: '2.1', group: 'power_prod_fault', description: 'Control system fault', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'control', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '2.2', group: 'power_prod_fault', description: 'Protection / internal electrical fault', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'protection', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '2.3', group: 'power_prod_fault', description: 'EOG + external electrical fault', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'electrical', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '2.4', group: 'power_prod_fault', description: 'NTM with fault (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'control', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
   // 3. Start-up
-  { number: '3.1', group: 'startup', description: 'Normal wind profile', windModel: 'NWP', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0 },
-  { number: '3.2', group: 'startup', description: 'Extreme operating gust', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0 },
-  { number: '3.3', group: 'startup', description: 'Extreme direction change', windModel: 'EDC', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0 },
+  { number: '3.1', group: 'startup', description: 'Normal wind profile', windModel: 'NWP', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 3, shutdownTime: null },
+  { number: '3.2', group: 'startup', description: 'Extreme operating gust', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 3, shutdownTime: null },
+  { number: '3.3', group: 'startup', description: 'Extreme direction change', windModel: 'EDC', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vin,Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 3, shutdownTime: null },
   // 4. Normal shutdown
-  { number: '4.1', group: 'normal_shutdown', description: 'Normal wind profile', windModel: 'NWP', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0 },
-  { number: '4.2', group: 'normal_shutdown', description: 'Extreme operating gust', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0 },
+  { number: '4.1', group: 'normal_shutdown', description: 'Normal wind profile', windModel: 'NWP', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 3, shutdownTime: null },
+  { number: '4.2', group: 'normal_shutdown', description: 'Extreme operating gust', windModel: 'EOG', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2,Vout', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 3, shutdownTime: null },
   // 5. Emergency shutdown
-  { number: '5.1', group: 'emergency_shutdown', description: 'Emergency shutdown', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0 },
+  { number: '5.1', group: 'emergency_shutdown', description: 'Emergency shutdown', windModel: 'NTM', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [0], defaultWindSpeeds: 'Vr-2,Vr,Vr+2', faultCondition: 'none', simulationLength: 60, initLength: 0, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: 20.0 },
   // 6. Parked
-  { number: '6.1', group: 'parked', description: 'EWM 50-yr recurrence', windModel: 'EWM 50-yr', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Ve50', faultCondition: 'none', simulationLength: 600, initLength: 200 },
-  { number: '6.2', group: 'parked', description: 'EWM 50-yr + grid loss', windModel: 'EWM 50-yr', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [-180, -30, 0, 30, 180], defaultWindSpeeds: 'Ve50', faultCondition: 'grid_loss', simulationLength: 600, initLength: 200 },
-  { number: '6.3', group: 'parked', description: 'EWM 1-yr recurrence', windModel: 'EWM 1-yr', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-20, 0, 20], defaultWindSpeeds: 'Ve1', faultCondition: 'none', simulationLength: 600, initLength: 200 },
-  { number: '6.4', group: 'parked', description: 'Normal turbulence (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200 },
+  { number: '6.1', group: 'parked', description: 'EWM 50-yr recurrence', windModel: 'EWM 50-yr', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Ve50', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: '50yr', iecWindType: '1EWM50', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '6.2', group: 'parked', description: 'EWM 50-yr + grid loss', windModel: 'EWM 50-yr', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [-180, -30, 0, 30, 180], defaultWindSpeeds: 'Ve50', faultCondition: 'grid_loss', simulationLength: 600, initLength: 200, seaState: '50yr', iecWindType: '1EWM50', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '6.3', group: 'parked', description: 'EWM 1-yr recurrence', windModel: 'EWM 1-yr', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-20, 0, 20], defaultWindSpeeds: 'Ve1', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: '1yr', iecWindType: '1EWM1', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '6.4', group: 'parked', description: 'Normal turbulence (fatigue)', windModel: 'NTM', analysisType: 'fatigue', partialSafetyFactor: 1.0, defaultSeeds: 6, defaultYaw: [-8, 0, 8], defaultWindSpeeds: 'Vin:Vout', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '6.5', group: 'parked', description: '1-yr extreme sea state (offshore)', windModel: 'EWM 1-yr', analysisType: 'ultimate', partialSafetyFactor: 1.35, defaultSeeds: 6, defaultYaw: [-20, 0, 20], defaultWindSpeeds: 'Ve1', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'ESS', iecWindType: '1EWM1', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
   // 7. Parked + fault
-  { number: '7.1', group: 'parked_fault', description: 'EWM 1-yr + yaw system fault', windModel: 'EWM 1-yr', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [-180, -30, 0, 30, 180], defaultWindSpeeds: 'Ve1', faultCondition: 'yaw_system', simulationLength: 600, initLength: 200 },
+  { number: '7.1', group: 'parked_fault', description: 'EWM 1-yr + yaw system fault', windModel: 'EWM 1-yr', analysisType: 'ultimate', partialSafetyFactor: 1.1, defaultSeeds: 6, defaultYaw: [-180, -30, 0, 30, 180], defaultWindSpeeds: 'Ve1', faultCondition: 'yaw_system', simulationLength: 600, initLength: 200, seaState: '1yr', iecWindType: '1EWM1', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
   // 8. Transport / installation
-  { number: '8.1', group: 'transport', description: 'Transport, assembly, maintenance', windModel: 'EWM', analysisType: 'ultimate', partialSafetyFactor: 1.5, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vmaint', faultCondition: 'none', simulationLength: 600, initLength: 200 },
+  { number: '8.1', group: 'transport', description: 'Transport, assembly, maintenance', windModel: 'EWM', analysisType: 'ultimate', partialSafetyFactor: 1.5, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vmaint', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: 'NSS', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
+  { number: '12.1', group: 'transport', description: 'WEIS transport/installation', windModel: 'EWM', analysisType: 'ultimate', partialSafetyFactor: 1.5, defaultSeeds: 1, defaultYaw: [0], defaultWindSpeeds: 'Vmaint', faultCondition: 'none', simulationLength: 600, initLength: 200, seaState: '1yr', iecWindType: 'NTM', windProfileType: 'IEC', nAzimuth: 1, shutdownTime: null },
 ];
 
 // ---------------------------------------------------------------------------
@@ -151,14 +189,40 @@ interface GroupDef {
 }
 
 const DLC_GROUPS: GroupDef[] = [
-  { key: 'power_production', label: '1. Power Production', dlcRange: '1.1 \u2013 1.5', icon: Zap },
+  { key: 'power_production', label: '1. Power Production', dlcRange: '1.1 \u2013 1.6', icon: Zap },
   { key: 'power_prod_fault', label: '2. Power Production + Fault', dlcRange: '2.1 \u2013 2.4', icon: AlertTriangle },
   { key: 'startup', label: '3. Start-up', dlcRange: '3.1 \u2013 3.3', icon: Play },
   { key: 'normal_shutdown', label: '4. Normal Shutdown', dlcRange: '4.1 \u2013 4.2', icon: Square },
   { key: 'emergency_shutdown', label: '5. Emergency Shutdown', dlcRange: '5.1', icon: AlertOctagon },
-  { key: 'parked', label: '6. Parked (Standstill or Idling)', dlcRange: '6.1 \u2013 6.4', icon: ParkingCircle },
+  { key: 'parked', label: '6. Parked (Standstill or Idling)', dlcRange: '6.1 \u2013 6.5', icon: ParkingCircle },
   { key: 'parked_fault', label: '7. Parked + Fault Conditions', dlcRange: '7.1', icon: ShieldAlert },
-  { key: 'transport', label: '8. Transport / Installation', dlcRange: '8.1', icon: Truck },
+  { key: 'transport', label: '8. Transport / Installation', dlcRange: '8.1, 12.1', icon: Truck },
+];
+
+// IEC wind type options for TurbSim
+const IEC_WIND_TYPES = [
+  { value: 'NTM', label: 'NTM (Normal Turbulence)' },
+  { value: '1ETM', label: 'ETM (Extreme Turbulence)' },
+  { value: '1EWM1', label: 'EWM 1-yr (Extreme Wind 1yr)' },
+  { value: '1EWM50', label: 'EWM 50-yr (Extreme Wind 50yr)' },
+];
+
+// Wind profile type options
+const WIND_PROFILE_TYPES = [
+  { value: 'IEC', label: 'IEC (PL on rotor, LOG elsewhere)' },
+  { value: 'PL', label: 'PL (Power Law)' },
+  { value: 'LOG', label: 'LOG (Logarithmic)' },
+  { value: 'JET', label: 'JET (Low-Level Jet)' },
+];
+
+// Sea state options
+const SEA_STATE_OPTIONS = [
+  { value: 'NSS', label: 'NSS (Normal)' },
+  { value: 'SSS', label: 'SSS (Severe)' },
+  { value: 'ESS', label: 'ESS (Extreme)' },
+  { value: 'fatigue', label: 'Fatigue' },
+  { value: '1yr', label: '1-year return' },
+  { value: '50yr', label: '50-year return' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -215,6 +279,17 @@ interface DLCRowState {
   initLength: number;
   description: string;
   isCustom: boolean;
+  // WEIS-enhanced fields
+  seaState: string;
+  waveSeedStart: number;
+  nWaveSeeds: number;
+  waveDir: number;
+  iecWindType: string;
+  windProfileType: string;
+  nAzimuth: number;
+  azimuthInit: number;
+  shutdownTime: number | null;
+  probabilityWeight: number;
 }
 
 function defaultRowState(meta?: DLCMeta): DLCRowState {
@@ -233,6 +308,17 @@ function defaultRowState(meta?: DLCMeta): DLCRowState {
     initLength: meta?.initLength ?? 200,
     description: meta?.description ?? '',
     isCustom: false,
+    // WEIS defaults from catalog
+    seaState: meta?.seaState ?? 'NSS',
+    waveSeedStart: 1000,
+    nWaveSeeds: 1,
+    waveDir: 0,
+    iecWindType: meta?.iecWindType ?? 'NTM',
+    windProfileType: meta?.windProfileType ?? 'IEC',
+    nAzimuth: meta?.nAzimuth ?? 1,
+    azimuthInit: 0,
+    shutdownTime: meta?.shutdownTime ?? null,
+    probabilityWeight: meta?.analysisType === 'fatigue' ? 1.0 : 1.0,
   };
 }
 
@@ -247,7 +333,7 @@ function generateWindSpeeds(min: number, max: number, step: number): number[] {
 function countCases(row: DLCRowState): number {
   if (!row.enabled) return 0;
   const speeds = generateWindSpeeds(row.windSpeedMin, row.windSpeedMax, row.windSpeedStep);
-  return speeds.length * row.seeds * row.yawMisalignments.length;
+  return speeds.length * row.seeds * row.yawMisalignments.length * row.nWaveSeeds * row.nAzimuth;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +383,8 @@ export default function DLCMatrix() {
     return init;
   });
   const [turbSimParams, setTurbSimParams] = useState<TurbSimParams>(defaultTurbSimParams());
+  const [metocean, setMetocean] = useState<MetoceanConditions | null>(null);
+  const [showMetocean, setShowMetocean] = useState(false);
 
   // ---- Fetch turbine models & existing definitions ----
   useEffect(() => {
@@ -317,6 +405,7 @@ export default function DLCMatrix() {
     setSelectedTurbineId(def.turbine_model_id);
     setActiveDefinitionId(def.id);
     if (def.turbsim_params) setTurbSimParams(def.turbsim_params);
+    if (def.metocean_conditions) { setMetocean(def.metocean_conditions); setShowMetocean(true); }
 
     const catalogNumbers = new Set(DLC_CATALOG.map((d) => d.number));
     const customMetas: DLCMeta[] = [];
@@ -341,6 +430,11 @@ export default function DLCMatrix() {
             faultCondition: baseMeta?.faultCondition ?? 'none',
             simulationLength: c.simulation_length ?? 600,
             initLength: c.init_length ?? 200,
+            seaState: c.sea_state ?? 'NSS',
+            iecWindType: c.iec_wind_type ?? 'NTM',
+            windProfileType: c.wind_profile_type ?? 'IEC',
+            nAzimuth: c.n_azimuth ?? 1,
+            shutdownTime: c.shutdown_time ?? null,
           });
         }
         const speeds = [...c.wind_speeds].sort((a, b) => a - b);
@@ -355,6 +449,17 @@ export default function DLCMatrix() {
           simulationLength: c.simulation_length ?? 600, initLength: c.init_length ?? 200,
           description: c.description || '',
           isCustom: c.is_custom ?? !catalogNumbers.has(c.dlc_number),
+          // WEIS fields
+          seaState: c.sea_state ?? 'NSS',
+          waveSeedStart: c.wave_seed_start ?? 1000,
+          nWaveSeeds: c.n_wave_seeds ?? 1,
+          waveDir: c.wave_dir ?? 0,
+          iecWindType: c.iec_wind_type ?? 'NTM',
+          windProfileType: c.wind_profile_type ?? 'IEC',
+          nAzimuth: c.n_azimuth ?? 1,
+          azimuthInit: c.azimuth_init ?? 0,
+          shutdownTime: c.shutdown_time ?? null,
+          probabilityWeight: c.probability_weight ?? 1.0,
         };
       });
     }
@@ -441,10 +546,26 @@ export default function DLCMatrix() {
         wind_condition: r.windCondition, partial_safety_factor: r.partialSafetyFactor,
         analysis_type: r.analysisType, simulation_length: r.simulationLength,
         init_length: r.initLength, description: r.description, is_custom: r.isCustom,
+        // WEIS-enhanced fields
+        sea_state: r.seaState,
+        wave_hs: null, wave_tp: null, wave_gamma: null,
+        wave_dir: r.waveDir,
+        wave_seed_start: r.waveSeedStart,
+        n_wave_seeds: r.nWaveSeeds,
+        iec_wind_type: r.iecWindType,
+        wind_profile_type: r.windProfileType,
+        n_azimuth: r.nAzimuth,
+        azimuth_init: r.azimuthInit,
+        shutdown_time: r.shutdownTime,
+        probability_weight: r.probabilityWeight,
+        initial_conditions: null,
       };
     });
-    return { name, turbine_model_id: selectedTurbineId, dlc_cases: dlcCases, turbsim_params: turbSimParams };
-  }, [name, selectedTurbineId, rows, turbSimParams, allDLCs]);
+    return {
+      name, turbine_model_id: selectedTurbineId, dlc_cases: dlcCases,
+      turbsim_params: turbSimParams, metocean_conditions: metocean,
+    };
+  }, [name, selectedTurbineId, rows, turbSimParams, metocean, allDLCs]);
 
   const handleSave = useCallback(async () => {
     if (!projectId) return;
@@ -524,6 +645,19 @@ export default function DLCMatrix() {
               <preset.icon size={13} />{preset.name}
             </button>
           ))}
+        </div>
+
+        {/* Metocean Conditions (collapsible) */}
+        <div className="mb-2">
+          <button onClick={() => setShowMetocean(!showMetocean)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-600/30 bg-cyan-950/20 px-3 py-1.5 text-xs font-medium text-cyan-300 transition-all hover:bg-cyan-950/40">
+            {showMetocean ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <Wind size={13} />Metocean Conditions (Offshore)
+            {metocean && <span className="ml-1 text-cyan-400/70">• configured</span>}
+          </button>
+          {showMetocean && (
+            <MetoceanEditor metocean={metocean} onChange={setMetocean} />
+          )}
         </div>
 
         {/* DLC Accordion Groups */}
@@ -670,7 +804,7 @@ export default function DLCMatrix() {
           <button onClick={() => {
             const init: Record<string, DLCRowState> = {};
             DLC_CATALOG.forEach((d) => { init[d.number] = defaultRowState(d); });
-            setAllDLCs([...DLC_CATALOG]); setRows(init); setTurbSimParams(defaultTurbSimParams()); setActiveDefinitionId(null); setShowNextStep(false); toast('Reset to defaults');
+            setAllDLCs([...DLC_CATALOG]); setRows(init); setTurbSimParams(defaultTurbSimParams()); setMetocean(null); setShowMetocean(false); setActiveDefinitionId(null); setShowNextStep(false); toast('Reset to defaults');
           }} className="btn-secondary w-full text-xs"><RotateCcw size={14} />Reset All</button>
         </div>
       </div>
@@ -835,6 +969,79 @@ function DLCRow({ dlc, row, cases, isFatigue, onToggleEnabled, onToggleExpand, o
                 </div>
               </div>
 
+              {/* WEIS: IEC Wind Type + Wind Profile + Sea State */}
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">IEC Wind Type</p>
+                  <select value={row.iecWindType} onChange={(e) => onUpdateRow({ iecWindType: e.target.value })} className="input-field text-xs w-full">
+                    {IEC_WIND_TYPES.map((wt) => (<option key={wt.value} value={wt.value}>{wt.label}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Wind Profile</p>
+                  <select value={row.windProfileType} onChange={(e) => onUpdateRow({ windProfileType: e.target.value })} className="input-field text-xs w-full">
+                    {WIND_PROFILE_TYPES.map((wp) => (<option key={wp.value} value={wp.value}>{wp.label}</option>))}
+                  </select>
+                </div>
+              </div>
+
+              {/* WEIS: Sea State + Wave Seeds */}
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Sea State</p>
+                  <select value={row.seaState} onChange={(e) => onUpdateRow({ seaState: e.target.value })} className="input-field text-xs w-full">
+                    {SEA_STATE_OPTIONS.map((ss) => (<option key={ss.value} value={ss.value}>{ss.label}</option>))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Wave Seed Start</p>
+                    <input type="number" value={row.waveSeedStart} onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v)) onUpdateRow({ waveSeedStart: v }); }}
+                      className="input-field w-full text-xs font-mono" />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider"># Wave Seeds</p>
+                    <input type="number" value={row.nWaveSeeds} onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 1) onUpdateRow({ nWaveSeeds: v }); }}
+                      min={1} className="input-field w-full text-xs font-mono" />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Wave Dir (&deg;)</p>
+                  <input type="number" value={row.waveDir} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onUpdateRow({ waveDir: v }); }}
+                    className="input-field w-full text-xs font-mono" />
+                </div>
+              </div>
+
+              {/* WEIS: Azimuth + Shutdown + Probability */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider"># Azimuths</p>
+                    <input type="number" value={row.nAzimuth} onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 1) onUpdateRow({ nAzimuth: v }); }}
+                      min={1} className="input-field w-full text-xs font-mono" />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Az Start (&deg;)</p>
+                    <input type="number" value={row.azimuthInit} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onUpdateRow({ azimuthInit: v }); }}
+                      className="input-field w-full text-xs font-mono" />
+                  </div>
+                </div>
+                {dlc.number === '5.1' && (
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Shutdown Time (s)</p>
+                    <input type="number" value={row.shutdownTime ?? 20} onChange={(e) => { const v = parseFloat(e.target.value); onUpdateRow({ shutdownTime: isNaN(v) ? null : v }); }}
+                      step={1} min={0} className="input-field w-full text-xs font-mono" />
+                  </div>
+                )}
+                {row.analysisType === 'fatigue' && (
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Probability Weight</p>
+                    <input type="number" value={row.probabilityWeight} onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) onUpdateRow({ probabilityWeight: v }); }}
+                      step={0.01} min={0} className="input-field w-full text-xs font-mono" />
+                  </div>
+                )}
+              </div>
+
               {/* Description */}
               <div className="col-span-full">
                 <p className="mb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Description / Notes</p>
@@ -845,7 +1052,12 @@ function DLCRow({ dlc, row, cases, isFatigue, onToggleEnabled, onToggleExpand, o
               {/* Case preview */}
               <div className="col-span-full">
                 <p className="text-[10px] text-slate-500">
-                  Preview: {generateWindSpeeds(row.windSpeedMin, row.windSpeedMax, row.windSpeedStep).length} wind speeds &times; {row.seeds} seeds &times; {row.yawMisalignments.length} yaw = <span className="font-semibold text-accent-300">{cases.toLocaleString()} cases</span> &bull; Sim: {row.simulationLength}s + {row.initLength}s init
+                  Preview: {generateWindSpeeds(row.windSpeedMin, row.windSpeedMax, row.windSpeedStep).length} ws &times; {row.seeds} seeds &times; {row.yawMisalignments.length} yaw
+                  {row.nWaveSeeds > 1 && <> &times; {row.nWaveSeeds} wave seeds</>}
+                  {row.nAzimuth > 1 && <> &times; {row.nAzimuth} azimuth</>}
+                  {' '}= <span className="font-semibold text-accent-300">{cases.toLocaleString()} cases</span>
+                  {' '}&bull; {row.iecWindType} &bull; {row.seaState}
+                  {' '}&bull; Sim: {row.simulationLength}s + {row.initLength}s init
                 </p>
               </div>
             </div>
@@ -853,6 +1065,91 @@ function DLCRow({ dlc, row, cases, isFatigue, onToggleEnabled, onToggleExpand, o
         </tr>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metocean Conditions Editor
+// ---------------------------------------------------------------------------
+
+const DEFAULT_METOCEAN: MetoceanConditions = {
+  wind_speeds: [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24],
+  wave_hs_nss: [1.1, 1.2, 1.4, 1.6, 1.8, 2.1, 2.4, 2.7, 3.1, 3.5, 3.9],
+  wave_tp_nss: [5.8, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5],
+  wave_hs_sss: [1.5, 1.8, 2.2, 2.6, 3.0, 3.5, 4.0, 4.6, 5.2, 5.8, 6.5],
+  wave_tp_sss: [6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5],
+  wave_hs_ess: null,
+  wave_tp_ess: null,
+  wave_gamma: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+  water_depth: 30.0,
+  current_speed: 0.0,
+};
+
+function MetoceanEditor({ metocean, onChange }: { metocean: MetoceanConditions | null; onChange: (m: MetoceanConditions | null) => void }) {
+  const data = metocean ?? DEFAULT_METOCEAN;
+
+  const handleInit = () => onChange({ ...DEFAULT_METOCEAN });
+  const handleClear = () => onChange(null);
+
+  const updateCell = (field: keyof MetoceanConditions, idx: number, value: number) => {
+    const arr = [...(data[field] as number[])];
+    arr[idx] = value;
+    onChange({ ...data, [field]: arr });
+  };
+
+  if (!metocean) {
+    return (
+      <div className="mt-2 rounded-lg border border-cyan-700/30 bg-cyan-950/10 p-3">
+        <p className="text-xs text-slate-400 mb-2">No metocean table defined. Wave parameters will be null unless manually overridden per-DLC.</p>
+        <button onClick={handleInit} className="btn-secondary text-xs"><Plus size={12} />Initialize Default Metocean Table</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-cyan-700/30 bg-cyan-950/10 p-3 space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-slate-500">Water Depth (m)</label>
+            <input type="number" value={data.water_depth} onChange={(e) => onChange({ ...data, water_depth: parseFloat(e.target.value) || 0 })}
+              className="input-field text-xs w-24 font-mono" />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500">Current Speed (m/s)</label>
+            <input type="number" value={data.current_speed} onChange={(e) => onChange({ ...data, current_speed: parseFloat(e.target.value) || 0 })}
+              className="input-field text-xs w-24 font-mono" step={0.1} />
+          </div>
+        </div>
+        <button onClick={handleClear} className="ml-auto btn-secondary text-xs text-red-400 hover:text-red-300"><X size={12} />Clear</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-xs w-full">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-700/30">
+              <th className="text-left px-1.5 py-1 text-[10px] font-semibold uppercase">V (m/s)</th>
+              <th className="text-center px-1.5 py-1 text-[10px] font-semibold uppercase">Hs NSS</th>
+              <th className="text-center px-1.5 py-1 text-[10px] font-semibold uppercase">Tp NSS</th>
+              <th className="text-center px-1.5 py-1 text-[10px] font-semibold uppercase">Hs SSS</th>
+              <th className="text-center px-1.5 py-1 text-[10px] font-semibold uppercase">Tp SSS</th>
+              <th className="text-center px-1.5 py-1 text-[10px] font-semibold uppercase">&gamma;</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.wind_speeds.map((ws, i) => (
+              <tr key={i} className="border-b border-slate-700/20">
+                <td className="px-1.5 py-0.5 font-mono text-slate-300">{ws}</td>
+                <td className="px-0.5 py-0.5"><input type="number" value={data.wave_hs_nss[i] ?? 0} onChange={(e) => updateCell('wave_hs_nss', i, parseFloat(e.target.value) || 0)} className="input-field w-14 text-[11px] font-mono text-center" step={0.1} /></td>
+                <td className="px-0.5 py-0.5"><input type="number" value={data.wave_tp_nss[i] ?? 0} onChange={(e) => updateCell('wave_tp_nss', i, parseFloat(e.target.value) || 0)} className="input-field w-14 text-[11px] font-mono text-center" step={0.1} /></td>
+                <td className="px-0.5 py-0.5"><input type="number" value={(data.wave_hs_sss ?? [])[i] ?? 0} onChange={(e) => { const arr = [...(data.wave_hs_sss ?? data.wave_hs_nss.map(() => 0))]; arr[i] = parseFloat(e.target.value) || 0; onChange({ ...data, wave_hs_sss: arr }); }} className="input-field w-14 text-[11px] font-mono text-center" step={0.1} /></td>
+                <td className="px-0.5 py-0.5"><input type="number" value={(data.wave_tp_sss ?? [])[i] ?? 0} onChange={(e) => { const arr = [...(data.wave_tp_sss ?? data.wave_tp_nss.map(() => 0))]; arr[i] = parseFloat(e.target.value) || 0; onChange({ ...data, wave_tp_sss: arr }); }} className="input-field w-14 text-[11px] font-mono text-center" step={0.1} /></td>
+                <td className="px-0.5 py-0.5"><input type="number" value={(data.wave_gamma ?? [])[i] ?? 1} onChange={(e) => { const arr = [...(data.wave_gamma ?? data.wind_speeds.map(() => 1))]; arr[i] = parseFloat(e.target.value) || 1; onChange({ ...data, wave_gamma: arr }); }} className="input-field w-14 text-[11px] font-mono text-center" step={0.1} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

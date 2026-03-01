@@ -174,10 +174,25 @@ def _prepare_case_from_reference(
     hub_height: float,
     turbulence_class: str,
     dll_path: str,
+    *,
+    iec_wind_type: str = "NTM",
+    wind_profile_type: str = "IEC",
+    wave_hs: float | None = None,
+    wave_tp: float | None = None,
+    wave_dir: float | None = None,
+    wave_seed: int | None = None,
+    wave_gamma: float | None = None,
+    initial_rotor_speed: float | None = None,
+    initial_blade_pitch: float | None = None,
+    azimuth_deg: float | None = None,
+    shutdown_time: float | None = None,
 ) -> tuple[list[str], str]:
     """Copy a validated reference deck and patch per-case parameters.
 
     Returns (file_list, fst_filename).
+
+    WEIS-enhanced: now accepts IEC wind type, wind profile, wave parameters,
+    initial conditions, azimuth, and shutdown time for per-case patching.
     """
     from app.openfast.turbsim_generator import (
         TurbSimConfig,
@@ -203,6 +218,7 @@ def _prepare_case_from_reference(
     grid_h = round(2.0 * hub_height, 1)  # e.g. 90 m hub → 180 m grid
     grid_w = round(2.0 * hub_height, 1)  # keep square grid
 
+    # Wire IEC wind type from case (no longer hardcoded to NTM)
     ts_config = TurbSimConfig(
         rand_seed1=seed_number,
         hub_ht=hub_height,
@@ -212,8 +228,9 @@ def _prepare_case_from_reference(
         ref_ht=hub_height,
         analysis_time=tmax + 30.0,
         iec_turbc=turbulence_class,
-        iec_wind_type="NTM",
+        iec_wind_type=iec_wind_type or "NTM",
         turb_model=TurbulenceModel.IECKAI,
+        wind_profile_type=wind_profile_type or "IEC",
     )
     ts_content = ts_gen.generate_turbsim_input(ts_config)
     (case_dir / ts_filename).write_text(ts_content, encoding="utf-8")
@@ -250,7 +267,19 @@ def _prepare_case_from_reference(
         srvd_path = srvd_files[0]
         srvd_text = srvd_path.read_text(encoding="utf-8")
         srvd_text = _patch_line(srvd_text, "DLL_FileName", f'"{dll_path}"')
+        # 6b. Patch shutdown time (DLC 5.1) if provided
+        if shutdown_time is not None:
+            srvd_text = _patch_line(srvd_text, "TimGenOf", f"{shutdown_time:.4f}")
         srvd_path.write_text(srvd_text, encoding="utf-8")
+
+    # 7. Patch HydroDyn per-case (offshore wave parameters)
+    if wave_hs is not None:
+        _patch_hydrodyn_per_case(case_dir, wave_hs, wave_tp, wave_dir, wave_seed, wave_gamma)
+
+    # 8. Patch ElastoDyn initial conditions (rotor speed, blade pitch, azimuth)
+    _patch_elastodyn_initial_conditions(
+        case_dir, initial_rotor_speed, initial_blade_pitch, azimuth_deg
+    )
 
     # Build file list
     file_list = []
@@ -259,6 +288,60 @@ def _prepare_case_from_reference(
             file_list.append(str(f.relative_to(case_dir)))
 
     return file_list, new_fst_name
+
+
+def _patch_hydrodyn_per_case(
+    case_dir: Path,
+    wave_hs: float | None,
+    wave_tp: float | None,
+    wave_dir: float | None,
+    wave_seed: int | None,
+    wave_gamma: float | None,
+) -> None:
+    """Patch HydroDyn .dat file with per-case wave parameters."""
+    hydrodyn_files = list(case_dir.glob("*HydroDyn*")) + list(case_dir.glob("*Hydrodyn*"))
+    if not hydrodyn_files:
+        return
+    hd_path = hydrodyn_files[0]
+    hd_text = hd_path.read_text(encoding="utf-8")
+    if wave_hs is not None:
+        hd_text = _patch_line(hd_text, "WaveHs", f"{wave_hs:.4f}")
+    if wave_tp is not None:
+        hd_text = _patch_line(hd_text, "WaveTp", f"{wave_tp:.4f}")
+    if wave_dir is not None:
+        hd_text = _patch_line(hd_text, "WaveDir", f"{wave_dir:.4f}")
+    if wave_seed is not None:
+        hd_text = _patch_line(hd_text, "WaveSeed(1)", f"{wave_seed}")
+    if wave_gamma is not None:
+        hd_text = _patch_line(hd_text, "WavePeakShFact", f"{wave_gamma:.4f}")
+    hd_path.write_text(hd_text, encoding="utf-8")
+
+
+def _patch_elastodyn_initial_conditions(
+    case_dir: Path,
+    initial_rotor_speed: float | None,
+    initial_blade_pitch: float | None,
+    azimuth_deg: float | None,
+) -> None:
+    """Patch ElastoDyn .dat file with initial conditions."""
+    if initial_rotor_speed is None and initial_blade_pitch is None and azimuth_deg is None:
+        return
+    ed_files = list(case_dir.glob("*ElastoDyn*")) + list(case_dir.glob("*Elastodyn*"))
+    # Filter to .dat files only (avoid blade/tower sub-files)
+    ed_files = [f for f in ed_files if f.suffix == ".dat" and "Blade" not in f.name and "Tower" not in f.name]
+    if not ed_files:
+        return
+    ed_path = ed_files[0]
+    ed_text = ed_path.read_text(encoding="utf-8")
+    if initial_rotor_speed is not None:
+        ed_text = _patch_line(ed_text, "RotSpeed", f"{initial_rotor_speed:.4f}")
+    if initial_blade_pitch is not None:
+        ed_text = _patch_line(ed_text, "BlPitch(1)", f"{initial_blade_pitch:.4f}")
+        ed_text = _patch_line(ed_text, "BlPitch(2)", f"{initial_blade_pitch:.4f}")
+        ed_text = _patch_line(ed_text, "BlPitch(3)", f"{initial_blade_pitch:.4f}")
+    if azimuth_deg is not None:
+        ed_text = _patch_line(ed_text, "Azimuth", f"{azimuth_deg:.4f}")
+    ed_path.write_text(ed_text, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +542,13 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                         f"_s{case.seed_number}"
                         f"_y{int(case.yaw_misalignment)}"
                     )
+                    # Append wave seed and azimuth if non-default to ensure unique dirs
+                    ws_val = getattr(case, "wave_seed", None)
+                    az_val = getattr(case, "azimuth_deg", None)
+                    if ws_val is not None and ws_val != 1000:
+                        case_dir_name += f"_ws{ws_val}"
+                    if az_val is not None and az_val != 0.0:
+                        case_dir_name += f"_az{int(az_val)}"
                     case_dir = base_dir / case_dir_name
                     case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -492,6 +582,18 @@ async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
                             hub_height=project.hub_height or 90.0,
                             turbulence_class=project.turbulence_class or "B",
                             dll_path=dll_path,
+                            # WEIS-enhanced per-case parameters
+                            iec_wind_type=getattr(case, "iec_wind_type", None) or "NTM",
+                            wind_profile_type=getattr(case, "wind_profile_type", None) or "IEC",
+                            wave_hs=getattr(case, "wave_hs", None),
+                            wave_tp=getattr(case, "wave_tp", None),
+                            wave_dir=getattr(case, "wave_dir", None),
+                            wave_seed=getattr(case, "wave_seed", None),
+                            wave_gamma=getattr(case, "wave_gamma", None),
+                            initial_rotor_speed=getattr(case, "initial_rotor_speed", None),
+                            initial_blade_pitch=getattr(case, "initial_blade_pitch", None),
+                            azimuth_deg=getattr(case, "azimuth_deg", None),
+                            shutdown_time=getattr(case, "shutdown_time", None),
                         )
                     else:
                         # ── Fallback: custom generator (for non-reference turbines) ──

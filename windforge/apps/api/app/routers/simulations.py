@@ -103,30 +103,154 @@ def _compute_progress(sim: Simulation) -> SimulationWithProgress:
     )
 
 
-def _expand_dlc_cases(dlc_def: DLCDefinition) -> list[dict]:
-    """Expand the DLC case matrix into individual simulation cases."""
-    cases: list[dict] = []
-    for spec in (dlc_def.dlc_cases or []):
-        dlc_number = spec.get("dlc_number", "1.1") if isinstance(spec, dict) else spec.dlc_number
-        wind_speeds = spec.get("wind_speeds", []) if isinstance(spec, dict) else spec.wind_speeds
-        seeds = spec.get("seeds", 6) if isinstance(spec, dict) else spec.seeds
-        yaw_misalignments = (
-            spec.get("yaw_misalignments", [0.0])
-            if isinstance(spec, dict)
-            else spec.yaw_misalignments
-        )
+def _get(spec, key: str, default=None):
+    """Get a value from a dict or pydantic model (handles both formats)."""
+    if isinstance(spec, dict):
+        return spec.get(key, default)
+    return getattr(spec, key, default)
 
-        for ws in wind_speeds:
+
+def _lookup_metocean(
+    metocean: dict | None,
+    wind_speeds: list[float],
+    sea_state: str,
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """Interpolate metocean table to get wave Hs/Tp/gamma for each wind speed.
+
+    Uses numpy interpolation from the metocean condition table.
+    Sea-state selects which column set to use (NSS, SSS, ESS).
+    """
+    if not metocean:
+        return [None] * len(wind_speeds), [None] * len(wind_speeds), [None] * len(wind_speeds)
+
+    met_ws = metocean.get("wind_speeds", [])
+    if not met_ws:
+        return [None] * len(wind_speeds), [None] * len(wind_speeds), [None] * len(wind_speeds)
+
+    # Select column set by sea state
+    ss_map = {
+        "NSS": ("wave_hs_nss", "wave_tp_nss"),
+        "SSS": ("wave_hs_sss", "wave_tp_sss"),
+        "ESS": ("wave_hs_ess", "wave_tp_ess"),
+        "fatigue": ("wave_hs_nss", "wave_tp_nss"),
+        "1yr": ("wave_hs_sss", "wave_tp_sss"),
+        "50yr": ("wave_hs_ess", "wave_tp_ess"),
+    }
+    hs_key, tp_key = ss_map.get(sea_state, ("wave_hs_nss", "wave_tp_nss"))
+    met_hs = metocean.get(hs_key) or metocean.get("wave_hs_nss")
+    met_tp = metocean.get(tp_key) or metocean.get("wave_tp_nss")
+    met_gamma = metocean.get("wave_gamma")
+
+    if not met_hs or not met_tp:
+        return [None] * len(wind_speeds), [None] * len(wind_speeds), [None] * len(wind_speeds)
+
+    hs_out = list(np.interp(wind_speeds, met_ws, met_hs))
+    tp_out = list(np.interp(wind_speeds, met_ws, met_tp))
+    gamma_out = list(np.interp(wind_speeds, met_ws, met_gamma)) if met_gamma else [None] * len(wind_speeds)
+
+    return hs_out, tp_out, gamma_out
+
+
+def _lookup_initial_condition(
+    initial_conditions: dict | None,
+    wind_speed: float,
+    key: str,
+) -> float | None:
+    """Interpolate initial condition from lookup table."""
+    if not initial_conditions:
+        return None
+    ws_table = initial_conditions.get("wind_speed")
+    val_table = initial_conditions.get(key)
+    if not ws_table or not val_table or len(ws_table) != len(val_table):
+        return None
+    return float(np.interp(wind_speed, ws_table, val_table))
+
+
+def _expand_dlc_cases(dlc_def: DLCDefinition) -> list[dict]:
+    """Expand the DLC case matrix into individual simulation cases.
+
+    WEIS-style grouped variable expansion:
+      Group 0 (constants): wave_dir, shutdown_time — same for all cases
+      Group 1 (correlated): wind_speed + wave_hs + wave_tp vary TOGETHER
+      Group 2 (Cartesian): seeds × yaw × azimuth × wave_seeds
+    """
+    metocean = dlc_def.metocean_conditions
+    cases: list[dict] = []
+
+    for spec in (dlc_def.dlc_cases or []):
+        dlc_number = _get(spec, "dlc_number", "1.1")
+        wind_speeds = _get(spec, "wind_speeds", [])
+        seeds = _get(spec, "seeds", 6)
+        yaw_misalignments = _get(spec, "yaw_misalignments", [0.0])
+
+        # WEIS fields with defaults
+        sea_state = _get(spec, "sea_state", "NSS")
+        wave_hs_override = _get(spec, "wave_hs")
+        wave_tp_override = _get(spec, "wave_tp")
+        wave_gamma_override = _get(spec, "wave_gamma")
+        wave_dir = _get(spec, "wave_dir", 0.0)
+        wave_seed_start = _get(spec, "wave_seed_start", 1000)
+        n_wave_seeds = _get(spec, "n_wave_seeds", 1)
+        iec_wind_type = _get(spec, "iec_wind_type", "NTM")
+        wind_profile_type = _get(spec, "wind_profile_type", "IEC")
+        n_azimuth = _get(spec, "n_azimuth", 1)
+        azimuth_init = _get(spec, "azimuth_init", 0.0)
+        shutdown_time = _get(spec, "shutdown_time")
+        probability_weight = _get(spec, "probability_weight", 1.0)
+        analysis_type = _get(spec, "analysis_type", "ultimate")
+        initial_conditions = _get(spec, "initial_conditions")
+
+        # Group 1: build correlated wind-wave pairs
+        if wave_hs_override and len(wave_hs_override) == len(wind_speeds):
+            wave_hs_list = wave_hs_override
+            wave_tp_list = wave_tp_override or [None] * len(wind_speeds)
+            wave_gamma_list = wave_gamma_override or [None] * len(wind_speeds)
+        else:
+            # Auto-populate from metocean table
+            wave_hs_list, wave_tp_list, wave_gamma_list = _lookup_metocean(
+                metocean, wind_speeds, sea_state
+            )
+
+        # Group 2: independent sweep dimensions
+        azimuth_step = 360.0 / n_azimuth if n_azimuth > 1 else 360.0
+        azimuths = [azimuth_init + i * azimuth_step for i in range(n_azimuth)]
+        wave_seeds = [wave_seed_start + i for i in range(n_wave_seeds)]
+
+        # Expand: Group1 (correlated) × Group2 (Cartesian product)
+        for i, ws in enumerate(wind_speeds):
+            hs_val = wave_hs_list[i] if i < len(wave_hs_list) else None
+            tp_val = wave_tp_list[i] if i < len(wave_tp_list) else None
+            gm_val = wave_gamma_list[i] if i < len(wave_gamma_list) else None
+
+            # Interpolate initial conditions if provided
+            init_rpm = _lookup_initial_condition(initial_conditions, ws, "rotor_speed")
+            init_pitch = _lookup_initial_condition(initial_conditions, ws, "blade_pitch")
+
             for seed in range(1, seeds + 1):
                 for yaw in yaw_misalignments:
-                    cases.append(
-                        {
-                            "dlc_number": dlc_number,
-                            "wind_speed": ws,
-                            "seed_number": seed,
-                            "yaw_misalignment": yaw,
-                        }
-                    )
+                    for az in azimuths:
+                        for wseed in wave_seeds:
+                            cases.append(
+                                {
+                                    "dlc_number": dlc_number,
+                                    "wind_speed": ws,
+                                    "seed_number": seed,
+                                    "yaw_misalignment": yaw,
+                                    "wave_hs": hs_val,
+                                    "wave_tp": tp_val,
+                                    "wave_dir": wave_dir,
+                                    "wave_seed": wseed,
+                                    "wave_gamma": gm_val,
+                                    "iec_wind_type": iec_wind_type,
+                                    "wind_profile_type": wind_profile_type,
+                                    "azimuth_deg": az,
+                                    "probability_weight": probability_weight,
+                                    "initial_rotor_speed": init_rpm,
+                                    "initial_blade_pitch": init_pitch,
+                                    "shutdown_time": shutdown_time,
+                                    "analysis_type": analysis_type,
+                                }
+                            )
     return cases
 
 
@@ -151,11 +275,18 @@ async def create_dlc_definition(
         dlc_cases_data = [c.model_dump() for c in body.dlc_cases]
 
     turbsim_data = body.turbsim_params.model_dump() if body.turbsim_params else None
+    metocean_data = body.metocean_conditions.model_dump() if body.metocean_conditions else None
 
-    # Count total cases
+    # Count total cases (including wave seeds and azimuth)
     total = 0
     for spec in (body.dlc_cases or []):
-        total += len(spec.wind_speeds) * spec.seeds * len(spec.yaw_misalignments)
+        total += (
+            len(spec.wind_speeds)
+            * spec.seeds
+            * len(spec.yaw_misalignments)
+            * spec.n_wave_seeds
+            * spec.n_azimuth
+        )
 
     dlc = DLCDefinition(
         project_id=project_id,
@@ -163,6 +294,7 @@ async def create_dlc_definition(
         name=body.name,
         dlc_cases=dlc_cases_data,
         turbsim_params=turbsim_data,
+        metocean_conditions=metocean_data,
         total_case_count=total,
     )
     db.add(dlc)
@@ -228,10 +360,16 @@ async def update_dlc_definition(
         update_data["dlc_cases"] = [
             c.model_dump() if hasattr(c, "model_dump") else c for c in update_data["dlc_cases"]
         ]
-        # Recount total cases
+        # Recount total cases (including wave seeds and azimuth)
         total = 0
         for spec in body.dlc_cases:
-            total += len(spec.wind_speeds) * spec.seeds * len(spec.yaw_misalignments)
+            total += (
+                len(spec.wind_speeds)
+                * spec.seeds
+                * len(spec.yaw_misalignments)
+                * spec.n_wave_seeds
+                * spec.n_azimuth
+            )
         dlc.total_case_count = total
 
     if "turbsim_params" in update_data and update_data["turbsim_params"] is not None:
@@ -239,6 +377,13 @@ async def update_dlc_definition(
             update_data["turbsim_params"].model_dump()
             if hasattr(update_data["turbsim_params"], "model_dump")
             else update_data["turbsim_params"]
+        )
+
+    if "metocean_conditions" in update_data and update_data["metocean_conditions"] is not None:
+        update_data["metocean_conditions"] = (
+            update_data["metocean_conditions"].model_dump()
+            if hasattr(update_data["metocean_conditions"], "model_dump")
+            else update_data["metocean_conditions"]
         )
 
     for field, value in update_data.items():
