@@ -79,6 +79,12 @@ async def _load_turbine_context(
                     "ss_1": tower.tower_ss_damping_1,
                     "ss_2": tower.tower_ss_damping_2,
                 },
+                "mode_coeffs": {
+                    "fa_mode_1": tower.fa_mode_1_coeffs,
+                    "fa_mode_2": tower.fa_mode_2_coeffs,
+                    "ss_mode_1": tower.ss_mode_1_coeffs,
+                    "ss_mode_2": tower.ss_mode_2_coeffs,
+                },
             }
 
     # Load blade
@@ -90,6 +96,15 @@ async def _load_turbine_context(
             blade_data = {
                 "structural_stations": blade.structural_stations or [],
                 "blade_length": blade.blade_length,
+                "damping": {
+                    "flap": blade.blade_flap_damping,
+                    "edge": blade.blade_edge_damping,
+                },
+                "mode_coeffs": {
+                    "flap_mode_1": blade.flap_mode_1_coeffs,
+                    "flap_mode_2": blade.flap_mode_2_coeffs,
+                    "edge_mode_1": blade.edge_mode_1_coeffs,
+                },
             }
 
     # Build turbine model dict
