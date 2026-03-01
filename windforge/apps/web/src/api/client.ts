@@ -22,6 +22,9 @@ import type {
   ResultsExtreme,
   ReferenceTemplate,
   FileNode,
+  MetoceanSite,
+  MetoceanSiteCreate,
+  MetoceanAutoGenerate,
 } from '@/types';
 
 export type { SimulationCase } from '@/types';
@@ -566,6 +569,122 @@ export const filesApi = {
   },
   getDownloadUrl(projectId: string, filePath: string): string {
     return `${api.defaults.baseURL}/projects/${projectId}/files/download/${filePath}`;
+  },
+};
+
+// ─── Metocean Sites API ──────────────────────────────────────────────────────
+
+export const metoceanApi = {
+  list: async (): Promise<MetoceanSite[]> => {
+    const res = await api.get<MetoceanSite[]>('/metocean-sites');
+    return res.data;
+  },
+
+  create: async (data: MetoceanSiteCreate): Promise<MetoceanSite> => {
+    const res = await api.post<MetoceanSite>('/metocean-sites', data);
+    return res.data;
+  },
+
+  get: async (siteId: string): Promise<MetoceanSite> => {
+    const res = await api.get<MetoceanSite>(`/metocean-sites/${siteId}`);
+    return res.data;
+  },
+
+  update: async (
+    siteId: string,
+    data: Partial<MetoceanSiteCreate>,
+  ): Promise<MetoceanSite> => {
+    const res = await api.put<MetoceanSite>(
+      `/metocean-sites/${siteId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (siteId: string): Promise<void> => {
+    await api.delete(`/metocean-sites/${siteId}`);
+  },
+
+  autoGenerate: async (data: MetoceanAutoGenerate): Promise<MetoceanSite> => {
+    const res = await api.post<MetoceanSite>(
+      '/metocean-sites/auto-generate',
+      data,
+    );
+    return res.data;
+  },
+};
+
+// ─── Frequency / Campbell API ───────────────────────────────────────────────
+
+export interface FrequencyResult {
+  stage: string;
+  stage_label: string;
+  rotor_speed_rpm: number;
+  frequencies_hz: number[];
+  mode_descriptions: string[];
+  component_info: Record<string, boolean>;
+}
+
+export interface CampbellResult {
+  rpm_values: number[];
+  modes: Array<{ name: string; frequencies: number[]; component: string }>;
+  excitation_lines: Record<
+    string,
+    { rpm: number[]; freq: number[]; label: string }
+  >;
+}
+
+export interface MultiStageResult {
+  stages: Array<{
+    stage: string;
+    stage_label: string;
+    frequencies_hz: number[];
+    mode_descriptions: string[];
+  }>;
+}
+
+export const frequencyApi = {
+  computeFrequencies: async (
+    projectId: string,
+    params: { turbine_model_id: string; stage: string; rotor_speed_rpm: number },
+  ): Promise<FrequencyResult> => {
+    const res = await api.post<FrequencyResult>(
+      `/projects/${projectId}/frequency/natural-frequencies`,
+      params,
+    );
+    return res.data;
+  },
+
+  computeCampbell: async (
+    projectId: string,
+    params: {
+      turbine_model_id: string;
+      rpm_min: number;
+      rpm_max: number;
+      rpm_steps: number;
+      n_modes: number;
+    },
+  ): Promise<CampbellResult> => {
+    const res = await api.post<CampbellResult>(
+      `/projects/${projectId}/frequency/campbell`,
+      params,
+    );
+    return res.data;
+  },
+
+  computeMultiStage: async (
+    projectId: string,
+    params: {
+      turbine_model_id: string;
+      stages: string[];
+      rotor_speed_rpm: number;
+    },
+  ): Promise<MultiStageResult> => {
+    const res = await api.post<MultiStageResult>(
+      `/projects/${projectId}/frequency/multi-stage`,
+      params,
+    );
+    return res.data;
   },
 };
 

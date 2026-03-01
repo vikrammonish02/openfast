@@ -6,6 +6,7 @@ import {
   LogOut,
   Wind,
   User,
+  Waves,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -15,6 +16,12 @@ const navItems = [
     icon: LayoutDashboard,
     label: 'Dashboard',
     end: true,
+  },
+  {
+    to: '/metocean',
+    icon: Waves,
+    label: 'Metocean',
+    end: false,
   },
   {
     to: '/settings',

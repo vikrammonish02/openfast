@@ -18,6 +18,8 @@ import SimulationRunner from '@/routes/project/SimulationRunner';
 import ResultsDashboard from '@/components/results/ResultsDashboard';
 import TurbineProperties from '@/components/turbine/TurbineProperties';
 import FileBrowser from '@/routes/project/FileBrowser';
+import MetoceanPage from '@/routes/MetoceanPage';
+import CampbellDiagram from '@/routes/project/CampbellDiagram';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
@@ -50,12 +52,14 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="metocean" element={<MetoceanPage />} />
         <Route path="projects/:projectId" element={<ProjectLayout />}>
           <Route index element={<Navigate to="tower" replace />} />
           <Route path="tower" element={<TowerDesigner />} />
           <Route path="blade" element={<BladeDesigner />} />
           <Route path="controller" element={<ControllerDesigner />} />
           <Route path="assembly" element={<TurbineAssembly />} />
+          <Route path="campbell" element={<CampbellDiagram />} />
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />

@@ -465,3 +465,50 @@ export interface ChannelInfo {
   name: string;
   unit: string;
 }
+
+// ─── Metocean Site ──────────────────────────────────────────────────────────
+
+export interface MetoceanSite {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string | null;
+  water_depth: number;
+  current_speed: number;
+  latitude: number | null;
+  longitude: number | null;
+  wind_speeds: number[] | null;
+  wave_hs_nss: number[] | null;
+  wave_tp_nss: number[] | null;
+  wave_hs_sss: number[] | null;
+  wave_tp_sss: number[] | null;
+  wave_hs_ess: number[] | null;
+  wave_tp_ess: number[] | null;
+  wave_gamma: number[] | null;
+  version: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MetoceanSiteCreate {
+  name: string;
+  description?: string | null;
+  water_depth?: number;
+  current_speed?: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  wind_speeds?: number[] | null;
+  wave_hs_nss?: number[] | null;
+  wave_tp_nss?: number[] | null;
+  wave_hs_sss?: number[] | null;
+  wave_tp_sss?: number[] | null;
+  wave_hs_ess?: number[] | null;
+  wave_tp_ess?: number[] | null;
+  wave_gamma?: number[] | null;
+}
+
+export interface MetoceanAutoGenerate {
+  name?: string;
+  wind_speeds?: number[];
+  water_depth?: number;
+}
