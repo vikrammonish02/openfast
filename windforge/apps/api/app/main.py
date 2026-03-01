@@ -19,6 +19,7 @@ from app.routers import dynamics as dynamics_router_mod
 from app.routers import stochastic as stochastic_router_mod
 from app.routers import potentialflow as potentialflow_router_mod
 from app.routers import particle as particle_router_mod
+from app.routers import postprocessing as postprocessing_router_mod
 from app.routers.simulations import dlc_router, router as simulations_router
 
 logger = logging.getLogger("windforge")
@@ -322,6 +323,7 @@ app.include_router(dynamics_router_mod.router, prefix="/api/v1")
 app.include_router(stochastic_router_mod.router, prefix="/api/v1")
 app.include_router(potentialflow_router_mod.router, prefix="/api/v1")
 app.include_router(particle_router_mod.router, prefix="/api/v1")
+app.include_router(postprocessing_router_mod.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

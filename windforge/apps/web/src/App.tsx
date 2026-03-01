@@ -29,6 +29,7 @@ import DynamicsPage from '@/routes/project/DynamicsPage';
 import StochasticPage from '@/routes/project/StochasticPage';
 import PotentialFlowPage from '@/routes/project/PotentialFlowPage';
 import ParticleDynamicsPage from '@/routes/project/ParticleDynamicsPage';
+import PostProcessingPage from '@/routes/project/PostProcessingPage';
 
 function App() {
   const loadUser = useAuthStore((s) => s.loadUser);
@@ -78,6 +79,7 @@ function App() {
           <Route path="stochastic" element={<StochasticPage />} />
           <Route path="potential-flow" element={<PotentialFlowPage />} />
           <Route path="particles" element={<ParticleDynamicsPage />} />
+          <Route path="postprocessing" element={<PostProcessingPage />} />
           <Route path="dlc" element={<DLCMatrix />} />
           <Route path="simulate" element={<SimulationRunner />} />
           <Route path="results" element={<ResultsDashboard />} />

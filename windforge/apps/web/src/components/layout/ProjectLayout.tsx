@@ -24,6 +24,7 @@ import {
   Waves,
   Atom,
   ChevronDown,
+  TrendingDown,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,31 @@ export default function ProjectLayout() {
                     {tab.label}
                   </NavLink>
                 ))}
+              </div>
+            </div>
+
+            {/* Post Processing section */}
+            <div>
+              <span className="flex items-center gap-1.5 px-2 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                  POST PROCESSING
+                </span>
+              </span>
+              <div className="space-y-0.5">
+                <NavLink
+                  to="postprocessing"
+                  className={({ isActive }) =>
+                    clsx(
+                      'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150',
+                      isActive
+                        ? 'bg-accent-500/10 text-accent-400'
+                        : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200',
+                    )
+                  }
+                >
+                  <TrendingDown className="h-4 w-4 flex-shrink-0" />
+                  Post Processing
+                </NavLink>
               </div>
             </div>
           </nav>
