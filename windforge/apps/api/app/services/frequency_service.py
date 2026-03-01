@@ -16,6 +16,11 @@ from welib.FEM.fem_beam import cbeam
 
 logger = logging.getLogger("windforge.frequency")
 
+# Steel properties (for tower / monopile cross-section computations)
+STEEL_E = 210e9   # Young's modulus [Pa]
+STEEL_G = 80.8e9  # Shear modulus [Pa]
+STEEL_RHO = 7850  # density [kg/m³]
+
 
 # ---------------------------------------------------------------------------
 # Stage labels for display
@@ -36,6 +41,29 @@ STAGE_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Low-level: tower frequencies
 # ---------------------------------------------------------------------------
+def _tube_section_props(D: float, t: float) -> dict:
+    """Compute cross-section properties for a thin-walled circular tube.
+
+    Parameters
+    ----------
+    D : float  Outer diameter [m]
+    t : float  Wall thickness [m]
+
+    Returns
+    -------
+    dict with A, Ix (=Iy=Iz for circle), Kt (torsion constant ~ 2*Ix)
+    """
+    r_o = D / 2.0
+    r_i = r_o - t
+    if r_i < 0:
+        r_i = 0.0
+    A = math.pi * (r_o**2 - r_i**2)
+    I = math.pi / 4.0 * (r_o**4 - r_i**4)
+    # Torsion constant for thin-walled tube ≈ 2 × I
+    Kt = 2.0 * I
+    return {"A": A, "I": I, "Kt": Kt}
+
+
 def compute_tower_frequencies(
     stations: list[dict],
     tower_height: float,
@@ -48,7 +76,8 @@ def compute_tower_frequencies(
     Parameters
     ----------
     stations : list[dict]
-        Tower station data with keys: frac, mass_den, fa_stiff, ss_stiff.
+        Tower station data with keys: frac, mass_den, fa_stiff, ss_stiff,
+        and optionally outer_diameter, wall_thickness for cross-section props.
     tower_height : float
         Tower flexible length (m).
     tip_mass : float
@@ -74,6 +103,29 @@ def compute_tower_frequencies(
     ei_fa = np.array([s["fa_stiff"] for s in sorted_st])
     ei_ss = np.array([s.get("ss_stiff", s["fa_stiff"]) for s in sorted_st])
 
+    # Compute cross-section properties from geometry if available,
+    # otherwise estimate from EI assuming steel tubular section.
+    n_st = len(sorted_st)
+    EA_arr = np.zeros(n_st)
+    EIx_arr = np.zeros(n_st)   # torsional rigidity ≈ G·Kt
+    Kt_arr = np.zeros(n_st)
+
+    for i, s in enumerate(sorted_st):
+        D = s.get("outer_diameter", 0)
+        t = s.get("wall_thickness", 0)
+        if D > 0 and t > 0:
+            props = _tube_section_props(D, t)
+            EA_arr[i] = STEEL_E * props["A"]
+            # For torsion: GJ (where J ≈ 2·I for circular tube)
+            EIx_arr[i] = STEEL_G * props["Kt"]
+            Kt_arr[i] = props["Kt"]
+        else:
+            # Estimate from EI: assume EI ≈ E · I, so I = EI / E
+            # EA ≈ E · A, and for tube A ≈ I / (D²/8) → approximate
+            I_est = ei_fa[i] / STEEL_E
+            EIx_arr[i] = STEEL_G * 2.0 * I_est  # GJ ≈ 2·G·I
+            EA_arr[i] = ei_fa[i] * 100.0  # rough approximation
+
     # Build 6x6 tip mass matrix (translational mass only, no inertia)
     M_tip = None
     if tip_mass > 0:
@@ -86,8 +138,10 @@ def compute_tower_frequencies(
     fem = cbeam(
         xNodes=x_nodes,
         m=mass_den,
+        EIx=EIx_arr,
         EIy=ei_fa,
         EIz=ei_ss,
+        EA=EA_arr,
         element="frame3d",
         BC=base_bc,
         M_tip=M_tip,
@@ -154,64 +208,85 @@ def compute_blade_frequencies(
     ei_flap = np.array([s["flap_stiff"] for s in sorted_st])
     ei_edge = np.array([s.get("edge_stiff", s["flap_stiff"]) for s in sorted_st])
 
+    # Estimate cross-section properties for blade (composite, not steel)
+    # EIx (torsional) ≈ average of EIflap and EIedge (rough approximation)
+    # EA ≈ large relative to bending — estimate from EI
+    n_st = len(sorted_st)
+    EIx_arr = np.zeros(n_st)
+    EA_arr = np.zeros(n_st)
+    for i in range(n_st):
+        # Torsional stiffness ~ geometric mean of flap and edge
+        EIx_arr[i] = np.sqrt(ei_flap[i] * ei_edge[i])
+        # Axial stiffness — for composite blades, EA is typically very high
+        # Estimate: EA ≈ EI / (span²/12) scaled, use a generous factor
+        EA_arr[i] = max(ei_flap[i], ei_edge[i]) * 100.0
+
     # Base FEM (no rotation)
     fem = cbeam(
         xNodes=x_nodes,
         m=mass_den,
+        EIx=EIx_arr,
         EIy=ei_flap,
         EIz=ei_edge,
+        EA=EA_arr,
         element="frame3d",
         BC=base_bc,
     )
 
     if rotor_speed_rpm > 0:
-        # Add centrifugal stiffening
+        # Add centrifugal stiffening to the reduced (BC-applied) matrices
         omega = rotor_speed_rpm * 2.0 * math.pi / 60.0
-        KKr = fem["KKr"].copy()
-        MMr = fem["MMr"]
+        KK = fem["KK"].copy()  # reduced stiffness matrix (after BC removal)
+        MM = fem["MM"]          # reduced mass matrix
+        Nodes2DOF = fem["Nodes2DOF"]  # (n_nodes, 6) DOF mapping
+        IBC2Full = fem["IBC2Full"]    # maps reduced DOFs to full DOFs
 
-        # Compute centrifugal force at each node
-        # F_c(r) = ω² × ∫_r^R m(s)·s ds
-        # Approximate geometric stiffness contribution
         n_nodes = len(x_nodes)
-        n_dof = KKr.shape[0]
 
-        # Simplified approach: add centrifugal stiffening to diagonal
-        # K_c_ii = ω² × Σ(m_j × r_j) for j > i (mass outboard)
-        # This is a simplified version — for production, use welib's
-        # GKBeamStiffnening() for more accurate results
+        # Build a lookup from full DOF index → reduced DOF index
+        full2bc = {}
+        for bc_idx, full_idx in enumerate(IBC2Full):
+            full2bc[int(full_idx)] = bc_idx
+
+        # Compute centrifugal force at each node:
+        # F_c(r_i) = ω² × ∫_{r_i}^{R} m(s)·s·ds
         for i in range(n_nodes - 1):
-            # Centrifugal tension at node i
             outboard_mass_moment = 0.0
             for j in range(i + 1, n_nodes):
                 dr = x_nodes[j] - x_nodes[j - 1] if j > 0 else 0
                 outboard_mass_moment += mass_den[j] * x_nodes[j] * dr
             F_c = omega**2 * outboard_mass_moment
 
-            # Element length
             L_e = x_nodes[i + 1] - x_nodes[i]
             if L_e <= 0:
                 continue
 
-            # Add geometric stiffness to lateral DOFs for this element
-            # For frame3d: DOF per node = 6 (ux, uy, uz, rx, ry, rz)
-            # Lateral bending DOFs are uy(1), uz(2) per node
             kg_factor = F_c / L_e
-            # Map to reduced DOF indices (after BC application)
-            # This is approximate — exact mapping depends on BC transform
-            dof_idx = i * 6  # approximate starting DOF for node i
-            for d in [1, 2]:  # lateral DOFs
-                idx = dof_idx + d
-                if idx < n_dof and idx + 6 < n_dof:
-                    KKr[idx, idx] += kg_factor
-                    KKr[idx + 6, idx + 6] += kg_factor
-                    KKr[idx, idx + 6] -= kg_factor
-                    KKr[idx + 6, idx] -= kg_factor
 
-        # Re-solve eigenvalue problem
-        from welib.tools.eva import eig
-        freq_new, _, _ = eig(KKr, MMr)
-        freqs = freq_new
+            # Add geometric stiffness to lateral DOFs (uy=1, uz=2) for
+            # nodes i and i+1 of this element
+            for d in [1, 2]:  # lateral DOF offsets within a node
+                full_i = int(Nodes2DOF[i, d])
+                full_j = int(Nodes2DOF[i + 1, d])
+                bc_i = full2bc.get(full_i)
+                bc_j = full2bc.get(full_j)
+                # Only add if both DOFs are active (not removed by BC)
+                if bc_i is not None and bc_j is not None:
+                    KK[bc_i, bc_i] += kg_factor
+                    KK[bc_j, bc_j] += kg_factor
+                    KK[bc_i, bc_j] -= kg_factor
+                    KK[bc_j, bc_i] -= kg_factor
+
+        # Re-solve eigenvalue problem with stiffened matrix
+        from scipy.linalg import eigh
+        eigenvalues, _ = eigh(KK, MM)
+        # Convert eigenvalues (ω²) to frequencies (Hz), skip negatives
+        freq_new = []
+        for ev in eigenvalues:
+            if ev > 0:
+                freq_new.append(math.sqrt(ev) / (2.0 * math.pi))
+        freq_new.sort()
+        freqs = np.array(freq_new)
     else:
         freqs = fem["freq"]
 
