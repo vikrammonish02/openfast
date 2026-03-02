@@ -1,0 +1,691 @@
+import axios from 'axios';
+import type {
+  User,
+  Token,
+  RegisterRequest,
+  Project,
+  ProjectCreate,
+  Tower,
+  TowerCreate,
+  Blade,
+  BladeCreate,
+  Controller,
+  ControllerCreate,
+  TurbineModel,
+  TurbineModelCreate,
+  DLCDefinition,
+  DLCDefinitionCreate,
+  Simulation,
+  SimulationCase,
+  ResultsStatistics,
+  ResultsDEL,
+  ResultsExtreme,
+  ReferenceTemplate,
+  FileNode,
+  MetoceanSite,
+  MetoceanSiteCreate,
+  MetoceanAutoGenerate,
+} from '@/types';
+
+export type { SimulationCase } from '@/types';
+
+// ─── Axios Instance ──────────────────────────────────────────────────────────
+
+// In Electron desktop mode, the preload script injects the backend URL.
+// In dev mode (Vite proxy), we use the default relative path.
+const API_BASE =
+  (window as unknown as Record<string, string>).__WINDFORGE_API_URL__
+    ? `${(window as unknown as Record<string, string>).__WINDFORGE_API_URL__}/api/v1`
+    : '/api/v1';
+
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor: attach Bearer token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('windforge_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response interceptor: handle 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('windforge_token');
+      // In desktop mode (Electron), don't redirect to login
+      const isDesktop = !!(window as unknown as Record<string, string>).__WINDFORGE_API_URL__;
+      if (!isDesktop && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
+// ─── WebSocket base URL helper ───────────────────────────────────────────────
+
+const backendOrigin =
+  (window as unknown as Record<string, string>).__WINDFORGE_API_URL__ || '';
+
+export function getWsBaseUrl(): string {
+  if (backendOrigin) {
+    return backendOrigin.replace(/^http/, 'ws');
+  }
+  // Dev mode: same host
+  return `ws://${window.location.host}`;
+}
+
+// ─── Config API ─────────────────────────────────────────────────────────────
+
+export const configApi = {
+  getConfig: async (): Promise<{ desktop_mode: boolean; version: string }> => {
+    const res = await api.get<{ desktop_mode: boolean; version: string }>('/config');
+    return res.data;
+  },
+};
+
+// ─── Auth API ────────────────────────────────────────────────────────────────
+
+export const authApi = {
+  register: async (data: RegisterRequest): Promise<User> => {
+    const res = await api.post<User>('/auth/register', data);
+    return res.data;
+  },
+
+  login: async (email: string, password: string): Promise<Token> => {
+    const res = await api.post<Token>('/auth/login', { email, password });
+    return res.data;
+  },
+
+  getMe: async (): Promise<User> => {
+    const res = await api.get<User>('/auth/me');
+    return res.data;
+  },
+};
+
+// ─── Projects API ────────────────────────────────────────────────────────────
+
+export const projectsApi = {
+  list: async (): Promise<Project[]> => {
+    const res = await api.get<Project[]>('/projects');
+    return res.data;
+  },
+
+  create: async (data: ProjectCreate): Promise<Project> => {
+    const res = await api.post<Project>('/projects', data);
+    return res.data;
+  },
+
+  get: async (projectId: string): Promise<Project> => {
+    const res = await api.get<Project>(`/projects/${projectId}`);
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    data: Partial<ProjectCreate>,
+  ): Promise<Project> => {
+    const res = await api.patch<Project>(`/projects/${projectId}`, data);
+    return res.data;
+  },
+
+  delete: async (projectId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}`);
+  },
+};
+
+// ─── Templates API ────────────────────────────────────────────────────────
+
+export const templatesApi = {
+  list: async (): Promise<ReferenceTemplate[]> => {
+    const res = await api.get<ReferenceTemplate[]>('/templates');
+    return res.data;
+  },
+
+  createProject: async (data: {
+    template_id: string;
+    name: string;
+    description?: string;
+    platform_type?: string;
+  }): Promise<Project> => {
+    const res = await api.post<Project>('/templates/create-project', data);
+    return res.data;
+  },
+};
+
+// ─── Towers API ──────────────────────────────────────────────────────────────
+
+export const towersApi = {
+  list: async (projectId: string): Promise<Tower[]> => {
+    const res = await api.get<Tower[]>(`/projects/${projectId}/towers`);
+    return res.data;
+  },
+
+  create: async (projectId: string, data: TowerCreate): Promise<Tower> => {
+    const res = await api.post<Tower>(
+      `/projects/${projectId}/towers`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (projectId: string, towerId: string): Promise<Tower> => {
+    const res = await api.get<Tower>(
+      `/projects/${projectId}/towers/${towerId}`,
+    );
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    towerId: string,
+    data: Partial<TowerCreate>,
+  ): Promise<Tower> => {
+    const res = await api.put<Tower>(
+      `/projects/${projectId}/towers/${towerId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (projectId: string, towerId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}/towers/${towerId}`);
+  },
+
+  preview: async (
+    projectId: string,
+    data: TowerCreate,
+  ): Promise<{ heights: number[]; diameters: number[] }> => {
+    const res = await api.post(
+      `/projects/${projectId}/towers/preview`,
+      data,
+    );
+    return res.data;
+  },
+};
+
+// ─── Blades API ──────────────────────────────────────────────────────────────
+
+export const bladesApi = {
+  list: async (projectId: string): Promise<Blade[]> => {
+    const res = await api.get<Blade[]>(`/projects/${projectId}/blades`);
+    return res.data;
+  },
+
+  create: async (projectId: string, data: BladeCreate): Promise<Blade> => {
+    const res = await api.post<Blade>(
+      `/projects/${projectId}/blades`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (projectId: string, bladeId: string): Promise<Blade> => {
+    const res = await api.get<Blade>(
+      `/projects/${projectId}/blades/${bladeId}`,
+    );
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    bladeId: string,
+    data: Partial<BladeCreate>,
+  ): Promise<Blade> => {
+    const res = await api.put<Blade>(
+      `/projects/${projectId}/blades/${bladeId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (projectId: string, bladeId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}/blades/${bladeId}`);
+  },
+
+  previewED: async (
+    projectId: string,
+    data: BladeCreate,
+  ): Promise<{ span_fractions: number[]; values: number[] }> => {
+    const res = await api.post(
+      `/projects/${projectId}/blades/preview-ed`,
+      data,
+    );
+    return res.data;
+  },
+
+  previewAD: async (
+    projectId: string,
+    data: BladeCreate,
+  ): Promise<{ span_fractions: number[]; chords: number[]; twists: number[] }> => {
+    const res = await api.post(
+      `/projects/${projectId}/blades/preview-ad`,
+      data,
+    );
+    return res.data;
+  },
+};
+
+// ─── Controllers API ─────────────────────────────────────────────────────────
+
+export const controllersApi = {
+  list: async (projectId: string): Promise<Controller[]> => {
+    const res = await api.get<Controller[]>(
+      `/projects/${projectId}/controllers`,
+    );
+    return res.data;
+  },
+
+  create: async (
+    projectId: string,
+    data: ControllerCreate,
+  ): Promise<Controller> => {
+    const res = await api.post<Controller>(
+      `/projects/${projectId}/controllers`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (
+    projectId: string,
+    controllerId: string,
+  ): Promise<Controller> => {
+    const res = await api.get<Controller>(
+      `/projects/${projectId}/controllers/${controllerId}`,
+    );
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    controllerId: string,
+    data: Partial<ControllerCreate>,
+  ): Promise<Controller> => {
+    const res = await api.put<Controller>(
+      `/projects/${projectId}/controllers/${controllerId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (
+    projectId: string,
+    controllerId: string,
+  ): Promise<void> => {
+    await api.delete(`/projects/${projectId}/controllers/${controllerId}`);
+  },
+
+  preview: async (
+    projectId: string,
+    data: ControllerCreate,
+  ): Promise<{ wind_speeds: number[]; pitch: number[]; torque: number[]; power: number[] }> => {
+    const res = await api.post(
+      `/projects/${projectId}/controllers/preview`,
+      data,
+    );
+    return res.data;
+  },
+};
+
+// ─── Turbine Models API ──────────────────────────────────────────────────────
+
+export const turbineModelsApi = {
+  list: async (projectId: string): Promise<TurbineModel[]> => {
+    const res = await api.get<TurbineModel[]>(
+      `/projects/${projectId}/turbine-models`,
+    );
+    return res.data;
+  },
+
+  create: async (
+    projectId: string,
+    data: TurbineModelCreate,
+  ): Promise<TurbineModel> => {
+    const res = await api.post<TurbineModel>(
+      `/projects/${projectId}/turbine-models`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (
+    projectId: string,
+    modelId: string,
+  ): Promise<TurbineModel> => {
+    const res = await api.get<TurbineModel>(
+      `/projects/${projectId}/turbine-models/${modelId}`,
+    );
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    modelId: string,
+    data: Partial<TurbineModelCreate>,
+  ): Promise<TurbineModel> => {
+    const res = await api.put<TurbineModel>(
+      `/projects/${projectId}/turbine-models/${modelId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (projectId: string, modelId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}/turbine-models/${modelId}`);
+  },
+};
+
+// ─── DLC Definitions API ─────────────────────────────────────────────────────
+
+export const dlcDefinitionsApi = {
+  list: async (projectId: string): Promise<DLCDefinition[]> => {
+    const res = await api.get<DLCDefinition[]>(
+      `/projects/${projectId}/dlc-definitions`,
+    );
+    return res.data;
+  },
+
+  create: async (
+    projectId: string,
+    data: DLCDefinitionCreate,
+  ): Promise<DLCDefinition> => {
+    const res = await api.post<DLCDefinition>(
+      `/projects/${projectId}/dlc-definitions`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (
+    projectId: string,
+    dlcId: string,
+  ): Promise<DLCDefinition> => {
+    const res = await api.get<DLCDefinition>(
+      `/projects/${projectId}/dlc-definitions/${dlcId}`,
+    );
+    return res.data;
+  },
+
+  update: async (
+    projectId: string,
+    dlcId: string,
+    data: Partial<DLCDefinitionCreate>,
+  ): Promise<DLCDefinition> => {
+    const res = await api.put<DLCDefinition>(
+      `/projects/${projectId}/dlc-definitions/${dlcId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (projectId: string, dlcId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}/dlc-definitions/${dlcId}`);
+  },
+};
+
+// ─── Simulations API ─────────────────────────────────────────────────────────
+
+export interface SimulationCreate {
+  name: string;
+  turbine_model_id: string;
+  dlc_definition_id: string;
+}
+
+export const simulationsApi = {
+  list: async (projectId: string): Promise<Simulation[]> => {
+    const res = await api.get<Simulation[]>(
+      `/projects/${projectId}/simulations`,
+    );
+    return res.data;
+  },
+
+  create: async (
+    projectId: string,
+    data: SimulationCreate,
+  ): Promise<Simulation> => {
+    const res = await api.post<Simulation>(
+      `/projects/${projectId}/simulations`,
+      data,
+    );
+    return res.data;
+  },
+
+  get: async (
+    projectId: string,
+    simId: string,
+  ): Promise<Simulation> => {
+    const res = await api.get<Simulation>(
+      `/projects/${projectId}/simulations/${simId}`,
+    );
+    return res.data;
+  },
+
+  start: async (
+    projectId: string,
+    simId: string,
+  ): Promise<Simulation> => {
+    const res = await api.post<Simulation>(
+      `/projects/${projectId}/simulations/${simId}/start`,
+    );
+    return res.data;
+  },
+
+  cancel: async (
+    projectId: string,
+    simId: string,
+  ): Promise<Simulation> => {
+    const res = await api.post<Simulation>(
+      `/projects/${projectId}/simulations/${simId}/cancel`,
+    );
+    return res.data;
+  },
+
+  getCases: async (
+    projectId: string,
+    simId: string,
+  ): Promise<SimulationCase[]> => {
+    const res = await api.get<SimulationCase[]>(
+      `/projects/${projectId}/simulations/${simId}/cases`,
+    );
+    return res.data;
+  },
+
+  getResults: async (
+    projectId: string,
+    simId: string,
+  ): Promise<{
+    statistics: ResultsStatistics[];
+    dels: ResultsDEL[];
+    extremes: ResultsExtreme[];
+  }> => {
+    const [stats, dels, extremes] = await Promise.all([
+      api.get<ResultsStatistics[]>(
+        `/projects/${projectId}/simulations/${simId}/results/statistics`,
+      ),
+      api.get<ResultsDEL[]>(
+        `/projects/${projectId}/simulations/${simId}/results/del`,
+      ),
+      api.get<ResultsExtreme[]>(
+        `/projects/${projectId}/simulations/${simId}/results/extreme`,
+      ),
+    ]);
+    return {
+      statistics: stats.data,
+      dels: dels.data,
+      extremes: extremes.data,
+    };
+  },
+
+  getTimeSeries: async (
+    projectId: string,
+    simId: string,
+    caseId: string,
+    channels: string[] = [],
+    downsample: number = 1,
+  ) => {
+    const params = new URLSearchParams();
+    if (channels.length > 0) params.set('channels', channels.join(','));
+    if (downsample > 1) params.set('downsample', String(downsample));
+    const res = await api.get(
+      `/projects/${projectId}/simulations/${simId}/cases/${caseId}/timeseries?${params}`,
+    );
+    return res.data;
+  },
+
+  getChannels: async (
+    projectId: string,
+    simId: string,
+    caseId: string,
+  ) => {
+    const res = await api.get(
+      `/projects/${projectId}/simulations/${simId}/cases/${caseId}/channels`,
+    );
+    return res.data;
+  },
+};
+
+// ─── Files API ──────────────────────────────────────────────────────────────
+
+export const filesApi = {
+  async listFiles(projectId: string): Promise<FileNode[]> {
+    const res = await api.get<FileNode[]>(`/projects/${projectId}/files`);
+    return res.data;
+  },
+  async getFileContent(projectId: string, filePath: string): Promise<string> {
+    const res = await api.get(`/projects/${projectId}/files/content/${filePath}`, {
+      responseType: 'text',
+      transformResponse: [(data: string) => data],
+    });
+    return res.data;
+  },
+  getDownloadUrl(projectId: string, filePath: string): string {
+    return `${api.defaults.baseURL}/projects/${projectId}/files/download/${filePath}`;
+  },
+};
+
+// ─── Metocean Sites API ──────────────────────────────────────────────────────
+
+export const metoceanApi = {
+  list: async (): Promise<MetoceanSite[]> => {
+    const res = await api.get<MetoceanSite[]>('/metocean-sites');
+    return res.data;
+  },
+
+  create: async (data: MetoceanSiteCreate): Promise<MetoceanSite> => {
+    const res = await api.post<MetoceanSite>('/metocean-sites', data);
+    return res.data;
+  },
+
+  get: async (siteId: string): Promise<MetoceanSite> => {
+    const res = await api.get<MetoceanSite>(`/metocean-sites/${siteId}`);
+    return res.data;
+  },
+
+  update: async (
+    siteId: string,
+    data: Partial<MetoceanSiteCreate>,
+  ): Promise<MetoceanSite> => {
+    const res = await api.put<MetoceanSite>(
+      `/metocean-sites/${siteId}`,
+      data,
+    );
+    return res.data;
+  },
+
+  delete: async (siteId: string): Promise<void> => {
+    await api.delete(`/metocean-sites/${siteId}`);
+  },
+
+  autoGenerate: async (data: MetoceanAutoGenerate): Promise<MetoceanSite> => {
+    const res = await api.post<MetoceanSite>(
+      '/metocean-sites/auto-generate',
+      data,
+    );
+    return res.data;
+  },
+};
+
+// ─── Frequency / Campbell API ───────────────────────────────────────────────
+
+export interface FrequencyResult {
+  stage: string;
+  stage_label: string;
+  rotor_speed_rpm: number;
+  frequencies_hz: number[];
+  mode_descriptions: string[];
+  component_info: Record<string, boolean>;
+}
+
+export interface CampbellResult {
+  rpm_values: number[];
+  modes: Array<{ name: string; frequencies: number[]; component: string }>;
+  excitation_lines: Record<
+    string,
+    { rpm: number[]; freq: number[]; label: string }
+  >;
+}
+
+export interface MultiStageResult {
+  stages: Array<{
+    stage: string;
+    stage_label: string;
+    frequencies_hz: number[];
+    mode_descriptions: string[];
+  }>;
+}
+
+export const frequencyApi = {
+  computeFrequencies: async (
+    projectId: string,
+    params: { turbine_model_id: string; stage: string; rotor_speed_rpm: number },
+  ): Promise<FrequencyResult> => {
+    const res = await api.post<FrequencyResult>(
+      `/projects/${projectId}/frequency/natural-frequencies`,
+      params,
+    );
+    return res.data;
+  },
+
+  computeCampbell: async (
+    projectId: string,
+    params: {
+      turbine_model_id: string;
+      rpm_min: number;
+      rpm_max: number;
+      rpm_steps: number;
+      n_modes: number;
+    },
+  ): Promise<CampbellResult> => {
+    const res = await api.post<CampbellResult>(
+      `/projects/${projectId}/frequency/campbell`,
+      params,
+    );
+    return res.data;
+  },
+
+  computeMultiStage: async (
+    projectId: string,
+    params: {
+      turbine_model_id: string;
+      stages: string[];
+      rotor_speed_rpm: number;
+    },
+  ): Promise<MultiStageResult> => {
+    const res = await api.post<MultiStageResult>(
+      `/projects/${projectId}/frequency/multi-stage`,
+      params,
+    );
+    return res.data;
+  },
+};
+
+export default api;

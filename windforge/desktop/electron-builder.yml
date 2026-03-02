@@ -1,0 +1,50 @@
+appId: com.windforge.desktop
+productName: WindForge
+copyright: Copyright © 2026 WindForge
+
+directories:
+  output: dist
+
+files:
+  - main.js
+  - preload.js
+  - package.json
+
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+  - from: resources/python
+    to: python
+    filter:
+      - "**/*"
+  - from: resources/app/dist
+    to: app/dist
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: null
+  entitlementsInherit: null
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380

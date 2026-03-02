@@ -1,0 +1,1064 @@
+"""Background service for OpenFAST simulation pipeline.
+
+Four phases per case:
+  1. Generate input files (.fst, .dat, .inp)
+  2. Run TurbSim to produce .bts wind field
+  3. Run OpenFAST to produce .out time-series
+  4. Parse .out and persist results to DB
+"""
+
+import asyncio
+import logging
+import shutil
+import subprocess
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+import numpy as np
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.config import settings
+from app.database import async_session_factory
+from app.models.components import Tower, Blade, Controller, TurbineModel as TurbineModelORM
+from app.models.project import Project as ProjectORM
+from app.models.simulation import (
+    CaseStatus,
+    ResultsExtreme,
+    ResultsStatistics,
+    Simulation,
+    SimulationCase,
+    SimulationStatus,
+)
+from app.openfast.file_generator import (
+    OpenFASTFileGenerator,
+    TurbineModel as TurbineModelDC,
+    SimulationCase as SimulationCaseDC,
+    Project as ProjectDC,
+)
+from app.openfast.output_reader import OutputReader
+from app.openfast.servodyn_generator import ServoDynConfig, DISCONConfig
+from app.openfast.elastodyn_generator import (
+    ElastoDynBladeConfig,
+    ElastoDynTowerConfig,
+    BladeStation,
+    TowerStation,
+)
+from app.openfast.aerodyn_generator import AeroDynBladeConfig, AeroBladeStation
+from app.routers.websocket import publish_event
+
+logger = logging.getLogger("windforge.simulation_service")
+
+
+# ---------------------------------------------------------------------------
+# Binary availability check
+# ---------------------------------------------------------------------------
+
+def _check_binaries() -> dict[str, bool]:
+    """Check whether TurbSim and OpenFAST binaries are on PATH."""
+    return {
+        "turbsim": shutil.which(settings.TURBSIM_EXE) is not None,
+        "openfast": shutil.which(settings.OPENFAST_EXE) is not None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Subprocess runners (sync — called via run_in_executor)
+# ---------------------------------------------------------------------------
+
+def _run_turbsim_sync(inp_file: str, turbsim_exe: str) -> Path | None:
+    """Run TurbSim as a subprocess. Returns path to .bts or None."""
+    inp_path = Path(inp_file)
+    proc = subprocess.run(
+        [turbsim_exe, str(inp_path)],
+        cwd=str(inp_path.parent),
+        capture_output=True,
+        text=True,
+        timeout=1800,  # 30-minute timeout per case
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"TurbSim failed (exit {proc.returncode}): "
+            f"{proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]}"
+        )
+    # Look for the .bts output file
+    bts_file = inp_path.with_suffix(".bts")
+    if bts_file.is_file():
+        return bts_file
+    # Search for any .bts in the directory
+    bts_files = list(inp_path.parent.glob("*.bts"))
+    return max(bts_files, key=lambda p: p.stat().st_mtime) if bts_files else None
+
+
+def _run_openfast_sync(fst_file: str, openfast_exe: str) -> Path | None:
+    """Run OpenFAST as a subprocess. Returns path to .out/.outb or None."""
+    fst_path = Path(fst_file)
+    proc = subprocess.run(
+        [openfast_exe, str(fst_path)],
+        cwd=str(fst_path.parent),
+        capture_output=True,
+        text=True,
+        timeout=3600,  # 1-hour timeout
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"OpenFAST failed (exit {proc.returncode}): "
+            f"{proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]}"
+        )
+    stem = fst_path.stem
+    for suffix in (".outb", ".out"):
+        candidate = fst_path.parent / (stem + suffix)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Reference-based input file preparation
+# ---------------------------------------------------------------------------
+
+# Map template names → reference input deck directories
+_REFERENCE_DECKS: dict[str, str] = {
+    "NREL_5MW": "NREL-5MW",
+    "nrel_5mw": "NREL-5MW",
+    "NREL 5MW Assembly": "NREL-5MW",
+    "NREL 5MW Reference": "NREL-5MW",
+    # Future: "DTU_10MW": "DTU-10MW", "IEA_15MW": "IEA-15MW"
+}
+
+
+def _get_reference_dir(template_name: str | None) -> Path | None:
+    """Return path to a validated reference input deck, or None."""
+    if not template_name:
+        return None
+    deck_name = _REFERENCE_DECKS.get(template_name)
+    if not deck_name:
+        return None
+    ref_dir = Path(__file__).resolve().parent.parent / "openfast" / "reference_inputs" / deck_name
+    if ref_dir.is_dir():
+        return ref_dir
+    return None
+
+
+def _patch_line(text: str, keyword: str, new_value: str) -> str:
+    """Replace the value on a line containing `keyword` in an OpenFAST input file.
+
+    OpenFAST format: ``<value>   <keyword>   - <description>``
+    Finds the line, replaces everything before the keyword with the new value.
+    """
+    import re
+    lines = text.split("\n")
+    pattern = re.compile(
+        r'^(\s*)"?.*?"?\s+(' + re.escape(keyword) + r'\b)',
+        re.IGNORECASE,
+    )
+    for i, line in enumerate(lines):
+        m = pattern.match(line)
+        if m:
+            # Rebuild: new_value + spaces + keyword + rest of original line
+            kw_start = line.lower().index(keyword.lower())
+            lines[i] = f"{new_value:<14s}{line[kw_start:]}"
+            break
+    return "\n".join(lines)
+
+
+def _prepare_case_from_reference(
+    case_dir: Path,
+    ref_dir: Path,
+    case_name: str,
+    wind_speed: float,
+    seed_number: int,
+    yaw_misalignment: float,
+    tmax: float,
+    dt: float,
+    hub_height: float,
+    turbulence_class: str,
+    dll_path: str,
+    *,
+    iec_wind_type: str = "NTM",
+    wind_profile_type: str = "IEC",
+    wave_hs: float | None = None,
+    wave_tp: float | None = None,
+    wave_dir: float | None = None,
+    wave_seed: int | None = None,
+    wave_gamma: float | None = None,
+    initial_rotor_speed: float | None = None,
+    initial_blade_pitch: float | None = None,
+    azimuth_deg: float | None = None,
+    shutdown_time: float | None = None,
+) -> tuple[list[str], str]:
+    """Copy a validated reference deck and patch per-case parameters.
+
+    Returns (file_list, fst_filename).
+
+    WEIS-enhanced: now accepts IEC wind type, wind profile, wave parameters,
+    initial conditions, azimuth, and shutdown time for per-case patching.
+    """
+    from app.openfast.turbsim_generator import (
+        TurbSimConfig,
+        TurbSimGenerator,
+        TurbulenceModel,
+    )
+
+    # 1. Copy entire reference deck into case directory
+    #    (dirs_exist_ok=True so we can re-run without deleting)
+    for item in ref_dir.iterdir():
+        dest = case_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dest)
+
+    # 2. Generate TurbSim input (this is truly case-specific)
+    ts_gen = TurbSimGenerator()
+    ts_filename = f"{case_name}_TurbSim.inp"
+    # Grid must cover from below tower base to above blade tip.
+    # Using 2*hub_height ensures the grid bottom ≈ 0 m (covers full tower)
+    # and the top extends well above the blade tips.
+    grid_h = round(2.0 * hub_height, 1)  # e.g. 90 m hub → 180 m grid
+    grid_w = round(2.0 * hub_height, 1)  # keep square grid
+
+    # Wire IEC wind type from case (no longer hardcoded to NTM)
+    ts_config = TurbSimConfig(
+        rand_seed1=seed_number,
+        hub_ht=hub_height,
+        grid_height=grid_h,
+        grid_width=grid_w,
+        u_ref=wind_speed,
+        ref_ht=hub_height,
+        analysis_time=tmax + 30.0,
+        iec_turbc=turbulence_class,
+        iec_wind_type=iec_wind_type or "NTM",
+        turb_model=TurbulenceModel.IECKAI,
+        wind_profile_type=wind_profile_type or "IEC",
+    )
+    ts_content = ts_gen.generate_turbsim_input(ts_config)
+    (case_dir / ts_filename).write_text(ts_content, encoding="utf-8")
+
+    # 3. Find the .fst file and rename to case_name
+    fst_files = list(case_dir.glob("*.fst"))
+    if not fst_files:
+        raise FileNotFoundError("No .fst file in reference deck")
+    src_fst = fst_files[0]
+    new_fst_name = f"{case_name}.fst"
+    new_fst = case_dir / new_fst_name
+    if src_fst != new_fst:
+        src_fst.rename(new_fst)
+
+    # 4. Patch the .fst file
+    fst_text = new_fst.read_text(encoding="utf-8")
+    fst_text = _patch_line(fst_text, "TMax", f"{tmax:.4f}")
+    fst_text = _patch_line(fst_text, "DT", f"{dt:.6f}")
+    new_fst.write_text(fst_text, encoding="utf-8")
+
+    # 5. Patch InflowWind — set WindType=3 (TurbSim full-field), point to .bts
+    ifw_files = list(case_dir.glob("*InflowWind*"))
+    if ifw_files:
+        ifw_path = ifw_files[0]
+        ifw_text = ifw_path.read_text(encoding="utf-8")
+        ifw_text = _patch_line(ifw_text, "WindType", "3")
+        bts_name = ts_filename.replace(".inp", ".bts")
+        ifw_text = _patch_line(ifw_text, "FileName_BTS", f'"{bts_name}"')
+        ifw_path.write_text(ifw_text, encoding="utf-8")
+
+    # 6. Patch ServoDyn — set DLL_FileName to absolute path
+    srvd_files = list(case_dir.glob("*ServoDyn*"))
+    if srvd_files and dll_path:
+        srvd_path = srvd_files[0]
+        srvd_text = srvd_path.read_text(encoding="utf-8")
+        srvd_text = _patch_line(srvd_text, "DLL_FileName", f'"{dll_path}"')
+        # 6b. Patch shutdown time (DLC 5.1) if provided
+        if shutdown_time is not None:
+            srvd_text = _patch_line(srvd_text, "TimGenOf", f"{shutdown_time:.4f}")
+        srvd_path.write_text(srvd_text, encoding="utf-8")
+
+    # 7. Patch HydroDyn per-case (offshore wave parameters)
+    if wave_hs is not None:
+        _patch_hydrodyn_per_case(case_dir, wave_hs, wave_tp, wave_dir, wave_seed, wave_gamma)
+
+    # 8. Patch ElastoDyn initial conditions (rotor speed, blade pitch, azimuth)
+    _patch_elastodyn_initial_conditions(
+        case_dir, initial_rotor_speed, initial_blade_pitch, azimuth_deg
+    )
+
+    # Build file list
+    file_list = []
+    for f in sorted(case_dir.rglob("*")):
+        if f.is_file():
+            file_list.append(str(f.relative_to(case_dir)))
+
+    return file_list, new_fst_name
+
+
+def _patch_hydrodyn_per_case(
+    case_dir: Path,
+    wave_hs: float | None,
+    wave_tp: float | None,
+    wave_dir: float | None,
+    wave_seed: int | None,
+    wave_gamma: float | None,
+) -> None:
+    """Patch HydroDyn .dat file with per-case wave parameters."""
+    hydrodyn_files = list(case_dir.glob("*HydroDyn*")) + list(case_dir.glob("*Hydrodyn*"))
+    if not hydrodyn_files:
+        return
+    hd_path = hydrodyn_files[0]
+    hd_text = hd_path.read_text(encoding="utf-8")
+    if wave_hs is not None:
+        hd_text = _patch_line(hd_text, "WaveHs", f"{wave_hs:.4f}")
+    if wave_tp is not None:
+        hd_text = _patch_line(hd_text, "WaveTp", f"{wave_tp:.4f}")
+    if wave_dir is not None:
+        hd_text = _patch_line(hd_text, "WaveDir", f"{wave_dir:.4f}")
+    if wave_seed is not None:
+        hd_text = _patch_line(hd_text, "WaveSeed(1)", f"{wave_seed}")
+    if wave_gamma is not None:
+        hd_text = _patch_line(hd_text, "WavePeakShFact", f"{wave_gamma:.4f}")
+    hd_path.write_text(hd_text, encoding="utf-8")
+
+
+def _patch_elastodyn_initial_conditions(
+    case_dir: Path,
+    initial_rotor_speed: float | None,
+    initial_blade_pitch: float | None,
+    azimuth_deg: float | None,
+) -> None:
+    """Patch ElastoDyn .dat file with initial conditions."""
+    if initial_rotor_speed is None and initial_blade_pitch is None and azimuth_deg is None:
+        return
+    ed_files = list(case_dir.glob("*ElastoDyn*")) + list(case_dir.glob("*Elastodyn*"))
+    # Filter to .dat files only (avoid blade/tower sub-files)
+    ed_files = [f for f in ed_files if f.suffix == ".dat" and "Blade" not in f.name and "Tower" not in f.name]
+    if not ed_files:
+        return
+    ed_path = ed_files[0]
+    ed_text = ed_path.read_text(encoding="utf-8")
+    if initial_rotor_speed is not None:
+        ed_text = _patch_line(ed_text, "RotSpeed", f"{initial_rotor_speed:.4f}")
+    if initial_blade_pitch is not None:
+        ed_text = _patch_line(ed_text, "BlPitch(1)", f"{initial_blade_pitch:.4f}")
+        ed_text = _patch_line(ed_text, "BlPitch(2)", f"{initial_blade_pitch:.4f}")
+        ed_text = _patch_line(ed_text, "BlPitch(3)", f"{initial_blade_pitch:.4f}")
+    if azimuth_deg is not None:
+        ed_text = _patch_line(ed_text, "Azimuth", f"{azimuth_deg:.4f}")
+    ed_path.write_text(ed_text, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Results persistence helpers
+# ---------------------------------------------------------------------------
+
+async def _persist_case_results(
+    output_file: Path,
+    sim: Simulation,
+    case: SimulationCase,
+    db,
+) -> None:
+    """Parse .out file and create a ResultsStatistics record."""
+    reader = OutputReader()
+    output_data = reader.load(output_file)
+
+    channel_statistics: dict = {}
+    for idx, (name, unit) in enumerate(
+        zip(output_data.channel_names, output_data.channel_units)
+    ):
+        if name.upper() == "TIME":
+            continue
+        col = output_data.data[:, idx]
+        channel_statistics[name] = {
+            "min": float(np.nanmin(col)),
+            "max": float(np.nanmax(col)),
+            "mean": float(np.nanmean(col)),
+            "std": float(np.nanstd(col)),
+            "abs_max": float(np.nanmax(np.abs(col))),
+            "unit": unit,
+        }
+
+    stats = ResultsStatistics(
+        simulation_id=sim.id,
+        simulation_case_id=case.id,
+        dlc_number=case.dlc_number,
+        wind_speed=case.wind_speed,
+        channel_statistics=channel_statistics,
+    )
+    db.add(stats)
+    await db.flush()
+
+
+async def _persist_aggregated_results(sim: Simulation, db) -> None:
+    """Aggregate extreme loads across all cases and store."""
+    result = await db.execute(
+        select(ResultsStatistics).where(ResultsStatistics.simulation_id == sim.id)
+    )
+    all_stats = result.scalars().all()
+    if not all_stats:
+        return
+
+    extreme_loads: dict = {}
+    for stat in all_stats:
+        if not stat.channel_statistics:
+            continue
+        for channel, vals in stat.channel_statistics.items():
+            if channel not in extreme_loads:
+                extreme_loads[channel] = {
+                    "max": vals["max"],
+                    "min": vals["min"],
+                    "safety_factor": 1.35,
+                    "design_value": vals["max"] * 1.35,
+                }
+            else:
+                ex = extreme_loads[channel]
+                ex["max"] = max(ex["max"], vals["max"])
+                ex["min"] = min(ex["min"], vals["min"])
+                ex["design_value"] = ex["max"] * ex["safety_factor"]
+
+    if extreme_loads:
+        db.add(ResultsExtreme(simulation_id=sim.id, extreme_loads=extreme_loads))
+        await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline
+# ---------------------------------------------------------------------------
+
+# Keep backward compat alias
+async def run_file_generation(simulation_id: str, project_id: str) -> None:
+    """Alias for run_simulation_pipeline (backward compat)."""
+    return await run_simulation_pipeline(simulation_id, project_id)
+
+
+async def run_simulation_pipeline(simulation_id: str, project_id: str) -> None:
+    """Background task: generate files → run TurbSim → run OpenFAST → persist results.
+
+    Runs as an asyncio task kicked off by start_simulation().
+    Uses its own DB session (not the request session).
+    """
+    start_time = time.monotonic()
+
+    async with async_session_factory() as db:
+        try:
+            # 1. Load simulation with cases
+            result = await db.execute(
+                select(Simulation)
+                .where(Simulation.id == simulation_id)
+                .options(selectinload(Simulation.cases))
+            )
+            sim = result.scalar_one_or_none()
+            if sim is None:
+                logger.error("Simulation %s not found", simulation_id)
+                return
+
+            # 2. Load turbine model with tower, blade, controller
+            tm_result = await db.execute(
+                select(TurbineModelORM).where(TurbineModelORM.id == sim.turbine_model_id)
+            )
+            tm = tm_result.scalar_one_or_none()
+            if tm is None:
+                sim.status = SimulationStatus.FAILED
+                await db.commit()
+                await publish_event(simulation_id, {
+                    "type": "simulation_error",
+                    "error": "Turbine model not found",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                return
+
+            # Load related components
+            tower = None
+            if tm.tower_id:
+                t_result = await db.execute(select(Tower).where(Tower.id == tm.tower_id))
+                tower = t_result.scalar_one_or_none()
+
+            blade = None
+            if tm.blade_id:
+                b_result = await db.execute(select(Blade).where(Blade.id == tm.blade_id))
+                blade = b_result.scalar_one_or_none()
+
+            controller = None
+            if tm.controller_id:
+                c_result = await db.execute(select(Controller).where(Controller.id == tm.controller_id))
+                controller = c_result.scalar_one_or_none()
+
+            # Load project
+            proj_result = await db.execute(select(ProjectORM).where(ProjectORM.id == project_id))
+            project = proj_result.scalar_one_or_none()
+            if project is None:
+                sim.status = SimulationStatus.FAILED
+                await db.commit()
+                return
+
+            # 3. Determine whether to use validated reference files or custom generators
+            ref_dir = _get_reference_dir(tm.name)
+            use_reference = ref_dir is not None
+            if use_reference:
+                logger.info("Using validated reference deck: %s", ref_dir)
+            else:
+                logger.info("No reference deck for '%s', using custom generators", tm.name)
+
+            # Build file generator dataclasses (needed for fallback generator path)
+            turbine_dc = None
+            project_dc = None
+            generator = None
+            if not use_reference:
+                turbine_dc = _build_turbine_model_dc(tm, tower, blade, controller, project)
+                project_dc = _build_project_dc(project)
+                generator = OpenFASTFileGenerator()
+
+            # 4. Create output directory
+            base_dir = Path(settings.PROJECTS_DIR) / str(project_id) / "simulations" / str(simulation_id) / "cases"
+            base_dir.mkdir(parents=True, exist_ok=True)
+
+            # Check binary availability
+            binaries = _check_binaries()
+            can_execute = binaries["turbsim"] and binaries["openfast"]
+            logger.info(
+                "Binary check: turbsim=%s openfast=%s → execute=%s",
+                binaries["turbsim"], binaries["openfast"], can_execute,
+            )
+
+            # 5. Prepare files for each case
+            total = len(sim.cases)
+            completed = 0
+            failed = 0
+            case_dirs: dict[str, tuple[SimulationCase, Path, str]] = {}  # case_id → (case, dir, fst_name)
+
+            # Resolve DLL path
+            dll_path = settings.ROSCO_LIB_PATH or ""
+
+            # Publish start event
+            await publish_event(simulation_id, {
+                "type": "generation_started",
+                "total_cases": total,
+                "execute_mode": can_execute,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # ── Phase 1: Prepare input files ──────────────────────────
+            for case in sim.cases:
+                try:
+                    case_dir_name = (
+                        f"DLC{case.dlc_number.replace('.', '')}"
+                        f"_v{case.wind_speed:05.1f}"
+                        f"_s{case.seed_number}"
+                        f"_y{int(case.yaw_misalignment)}"
+                    )
+                    # Append wave seed and azimuth if non-default to ensure unique dirs
+                    ws_val = getattr(case, "wave_seed", None)
+                    az_val = getattr(case, "azimuth_deg", None)
+                    if ws_val is not None and ws_val != 1000:
+                        case_dir_name += f"_ws{ws_val}"
+                    if az_val is not None and az_val != 0.0:
+                        case_dir_name += f"_az{int(az_val)}"
+                    case_dir = base_dir / case_dir_name
+                    case_dir.mkdir(parents=True, exist_ok=True)
+
+                    case.status = CaseStatus.RUNNING
+                    case.started_at = datetime.now(timezone.utc)
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_progress",
+                        "case_id": str(case.id),
+                        "status": "generating",
+                        "message": (
+                            f"Generating files for DLC {case.dlc_number} "
+                            f"@ {case.wind_speed} m/s (seed {case.seed_number})"
+                        ),
+                        "progress": int((completed / max(total, 1)) * 100),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                    if use_reference:
+                        # ── Reference-based: copy validated deck + patch ──
+                        file_list, fst_name = _prepare_case_from_reference(
+                            case_dir=case_dir,
+                            ref_dir=ref_dir,
+                            case_name=case_dir_name,
+                            wind_speed=case.wind_speed,
+                            seed_number=case.seed_number,
+                            yaw_misalignment=case.yaw_misalignment,
+                            tmax=project.t_max or 630.0,
+                            dt=project.dt or 0.00625,
+                            hub_height=project.hub_height or 90.0,
+                            turbulence_class=project.turbulence_class or "B",
+                            dll_path=dll_path,
+                            # WEIS-enhanced per-case parameters
+                            iec_wind_type=getattr(case, "iec_wind_type", None) or "NTM",
+                            wind_profile_type=getattr(case, "wind_profile_type", None) or "IEC",
+                            wave_hs=getattr(case, "wave_hs", None),
+                            wave_tp=getattr(case, "wave_tp", None),
+                            wave_dir=getattr(case, "wave_dir", None),
+                            wave_seed=getattr(case, "wave_seed", None),
+                            wave_gamma=getattr(case, "wave_gamma", None),
+                            initial_rotor_speed=getattr(case, "initial_rotor_speed", None),
+                            initial_blade_pitch=getattr(case, "initial_blade_pitch", None),
+                            azimuth_deg=getattr(case, "azimuth_deg", None),
+                            shutdown_time=getattr(case, "shutdown_time", None),
+                        )
+                    else:
+                        # ── Fallback: custom generator (for non-reference turbines) ──
+                        case_dc = SimulationCaseDC(
+                            case_id=case_dir_name,
+                            dlc_number=case.dlc_number,
+                            wind_speed=case.wind_speed,
+                            seed_number=case.seed_number,
+                            yaw_misalignment=case.yaw_misalignment,
+                            simulation_time=project.t_max or 630.0,
+                            dt=project.dt or 0.005,
+                            wind_type=3,
+                        )
+                        files = generator.generate_all(turbine_dc, case_dc, project_dc)
+                        file_list = []
+                        fst_name = None
+                        for filename, content in files.items():
+                            filepath = case_dir / filename
+                            filepath.parent.mkdir(parents=True, exist_ok=True)
+                            filepath.write_text(content, encoding="utf-8")
+                            file_list.append(filename)
+                            if filename.endswith(".fst"):
+                                fst_name = filename
+                        fst_name = fst_name or f"{case_dir_name}.fst"
+
+                    case.input_files = {"directory": str(case_dir), "files": file_list}
+                    case_dirs[str(case.id)] = (case, case_dir, fst_name)
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_complete",
+                        "case_id": str(case.id),
+                        "phase": "file_generation",
+                        "files_generated": file_list,
+                        "directory": str(case_dir),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                except Exception as e:
+                    logger.exception("Failed to generate files for case %s", case.id)
+                    case.status = CaseStatus.FAILED
+                    case.error_message = str(e)
+                    case.completed_at = datetime.now(timezone.utc)
+                    failed += 1
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_error",
+                        "case_id": str(case.id),
+                        "error": str(e),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                await asyncio.sleep(0.01)
+
+            # If no binaries available, complete in generate-only mode
+            if not can_execute:
+                elapsed = time.monotonic() - start_time
+                # Mark file-generation-only cases as completed
+                for cid, (case, _, _) in case_dirs.items():
+                    case.status = CaseStatus.COMPLETED
+                    case.progress_percent = 100.0
+                    case.completed_at = datetime.now(timezone.utc)
+                    completed += 1
+                sim.completed_cases = completed
+                sim.failed_cases = failed
+                sim.status = SimulationStatus.COMPLETED
+                sim.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                await publish_event(simulation_id, {
+                    "type": "simulation_complete",
+                    "simulation_id": str(simulation_id),
+                    "mode": "generate_only",
+                    "completed": completed,
+                    "failed": failed,
+                    "total": total,
+                    "elapsed_seconds": round(elapsed, 2),
+                    "message": (
+                        "Input files generated. TurbSim/OpenFAST binaries not found "
+                        "on PATH — skipping execution. Install OpenFAST to run simulations."
+                    ),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                logger.info(
+                    "Simulation %s: generate-only mode (%d cases, %.1fs)",
+                    simulation_id, completed, elapsed,
+                )
+                return
+
+            # ── Phase 2 & 3: TurbSim + OpenFAST execution ─────────────
+            sim.status = SimulationStatus.GENERATING_WIND
+            await db.commit()
+            loop = asyncio.get_running_loop()
+
+            for cid, (case, case_dir, fst_name) in case_dirs.items():
+                if case.status == CaseStatus.FAILED:
+                    continue  # skip cases that failed file generation
+
+                try:
+                    # Phase 2: TurbSim
+                    turbsim_inp_files = list(case_dir.glob("*_TurbSim.inp")) + list(case_dir.glob("*TurbSim*.inp"))
+                    if turbsim_inp_files:
+                        inp_file = turbsim_inp_files[0]
+                        await publish_event(simulation_id, {
+                            "type": "case_progress",
+                            "case_id": cid,
+                            "status": "generating_wind",
+                            "message": f"Running TurbSim for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                        bts_path = await loop.run_in_executor(
+                            None, _run_turbsim_sync, str(inp_file), settings.TURBSIM_EXE
+                        )
+
+                        if bts_path:
+                            case.wind_field_path = str(bts_path)
+                            await publish_event(simulation_id, {
+                                "type": "case_progress",
+                                "case_id": cid,
+                                "status": "turbsim_complete",
+                                "message": f"TurbSim complete: {bts_path.name}",
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+
+                    # Phase 3: OpenFAST
+                    sim.status = SimulationStatus.RUNNING
+                    case.status = CaseStatus.RUNNING
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_progress",
+                        "case_id": cid,
+                        "status": "running_openfast",
+                        "message": f"Running OpenFAST for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                    out_path = await loop.run_in_executor(
+                        None, _run_openfast_sync, str(case_dir / fst_name), settings.OPENFAST_EXE
+                    )
+
+                    if out_path and out_path.is_file():
+                        # Phase 4: Parse results
+                        await publish_event(simulation_id, {
+                            "type": "case_progress",
+                            "case_id": cid,
+                            "status": "parsing_results",
+                            "message": f"Parsing results for DLC {case.dlc_number} @ {case.wind_speed} m/s...",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                        await _persist_case_results(out_path, sim, case, db)
+
+                        case.input_files = {
+                            **(case.input_files or {}),
+                            "output_file": str(out_path),
+                        }
+                        case.status = CaseStatus.COMPLETED
+                        case.progress_percent = 100.0
+                        case.completed_at = datetime.now(timezone.utc)
+                        case.wall_time_seconds = (case.completed_at - case.started_at).total_seconds()
+                        completed += 1
+                    else:
+                        case.status = CaseStatus.FAILED
+                        case.error_message = "OpenFAST produced no output file"
+                        case.completed_at = datetime.now(timezone.utc)
+                        failed += 1
+
+                    sim.completed_cases = completed
+                    sim.failed_cases = failed
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_complete",
+                        "case_id": cid,
+                        "phase": "execution",
+                        "output_file": str(out_path) if out_path else None,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                except Exception as e:
+                    logger.exception("Execution failed for case %s", case.id)
+                    case.status = CaseStatus.FAILED
+                    case.error_message = str(e)
+                    case.completed_at = datetime.now(timezone.utc)
+                    failed += 1
+                    sim.completed_cases = completed
+                    sim.failed_cases = failed
+                    await db.commit()
+
+                    await publish_event(simulation_id, {
+                        "type": "case_error",
+                        "case_id": cid,
+                        "error": str(e),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+                await asyncio.sleep(0.01)
+
+            # ── Phase 5: Aggregate results ─────────────────────────────
+            if completed > 0:
+                try:
+                    await _persist_aggregated_results(sim, db)
+                except Exception as e:
+                    logger.warning("Failed to aggregate results: %s", e)
+
+            # 6. Update simulation status
+            elapsed = time.monotonic() - start_time
+            sim.completed_cases = completed
+            sim.failed_cases = failed
+            sim.completed_at = datetime.now(timezone.utc)
+
+            if failed == total:
+                sim.status = SimulationStatus.FAILED
+            else:
+                sim.status = SimulationStatus.COMPLETED
+
+            await db.commit()
+
+            await publish_event(simulation_id, {
+                "type": "simulation_complete",
+                "simulation_id": str(simulation_id),
+                "mode": "full_execution",
+                "completed": completed,
+                "failed": failed,
+                "total": total,
+                "elapsed_seconds": round(elapsed, 2),
+                "output_directory": str(base_dir),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            logger.info(
+                "Simulation %s pipeline complete: %d/%d cases in %.1fs",
+                simulation_id, completed, total, elapsed,
+            )
+
+        except Exception as e:
+            logger.exception("Fatal error in simulation pipeline for %s", simulation_id)
+            try:
+                sim.status = SimulationStatus.FAILED
+                await db.commit()
+            except Exception:
+                pass
+
+            await publish_event(simulation_id, {
+                "type": "simulation_error",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+
+def _build_turbine_model_dc(
+    tm: TurbineModelORM,
+    tower: Tower | None,
+    blade: Blade | None,
+    controller: Controller | None,
+    project: ProjectORM,
+) -> TurbineModelDC:
+    """Convert ORM models to the file generator TurbineModel dataclass."""
+
+    # Build tower config
+    tower_config = None
+    if tower and tower.stations:
+        stations = []
+        for s in tower.stations:
+            # Tower station JSON keys: {frac, mass_den, fa_stiff, ss_stiff, ...}
+            # ElastoDyn TowerStation fields: ht_fract, t_mass_den, tw_fa_stif, tw_ss_stif
+            stations.append(TowerStation(
+                ht_fract=s.get("frac", s.get("height_fraction", 0)),
+                t_mass_den=s.get("mass_den", s.get("mass_density_kg_m", 0)),
+                tw_fa_stif=s.get("fa_stiff", s.get("FA_stiffness_Nm2", 0)),
+                tw_ss_stif=s.get("ss_stiff", s.get("SS_stiffness_Nm2", 0)),
+            ))
+        # ElastoDynTowerConfig fields: twr_fa_dmp1, twr_ss_dmp1, twr_fa_dmp2, twr_ss_dmp2
+        # Mode shapes: fa_mode_1, fa_mode_2, ss_mode_1, ss_mode_2 (5 coefficients each)
+        tower_config = ElastoDynTowerConfig(
+            n_tw_inp_st=len(stations),
+            twr_fa_dmp1=tower.tower_fa_damping_1,
+            twr_ss_dmp1=tower.tower_ss_damping_1,
+            twr_fa_dmp2=tower.tower_fa_damping_2,
+            twr_ss_dmp2=tower.tower_ss_damping_2,
+            stations=stations,
+            fa_mode_1=_mode_coeffs(tower.fa_mode_1_coeffs, [0.7004, 2.1963, -5.6202, 6.2275, -2.5040]),
+            fa_mode_2=_mode_coeffs(tower.fa_mode_2_coeffs, [-26.0840, 73.8440, -78.5640, 34.1800, -2.3760]),
+            ss_mode_1=_mode_coeffs(tower.ss_mode_1_coeffs, [0.6360, 2.2124, -5.5836, 6.2433, -2.5081]),
+            ss_mode_2=_mode_coeffs(tower.ss_mode_2_coeffs, [-26.5340, 75.0040, -79.3660, 34.2560, -2.3600]),
+        )
+
+    # Build blade config
+    blade_config = None
+    aerodyn_blade_config = None
+    if blade and blade.structural_stations:
+        # Blade structural station JSON keys: {frac, pitch_axis, struct_twist, mass_den, flap_stiff, edge_stiff}
+        # ElastoDyn BladeStation fields: bl_fract, pitch_ax, strc_twist, b_mass_den, flp_stff, edg_stff
+        blade_stations = []
+        for s in blade.structural_stations:
+            blade_stations.append(BladeStation(
+                bl_fract=s.get("frac", s.get("fraction", 0)),
+                pitch_ax=s.get("pitch_axis", 0.5),
+                strc_twist=s.get("struct_twist", s.get("structural_twist_deg", 0)),
+                b_mass_den=s.get("mass_den", s.get("mass_density_kg_m", 0)),
+                flp_stff=s.get("flap_stiff", s.get("flapwise_stiffness_Nm2", 0)),
+                edg_stff=s.get("edge_stiff", s.get("edgewise_stiffness_Nm2", 0)),
+            ))
+        # ElastoDynBladeConfig fields: n_bl_inp_st, bld_flex_l, bld_fl_dmp_1/2, bld_ed_dmp_1
+        # Mode shapes: flp_mode_1, flp_mode_2, edg_mode_1 (5 coefficients each)
+        blade_config = ElastoDynBladeConfig(
+            n_bl_inp_st=len(blade_stations),
+            bld_flex_l=blade.blade_length,
+            bld_fl_dmp_1=blade.blade_flap_damping,
+            bld_fl_dmp_2=blade.blade_flap_damping,
+            bld_ed_dmp_1=blade.blade_edge_damping,
+            stations=blade_stations,
+            flp_mode_1=_mode_coeffs(blade.flap_mode_1_coeffs, [0.0622, 1.7254, -3.2452, 4.7131, -2.2555]),
+            flp_mode_2=_mode_coeffs(blade.flap_mode_2_coeffs, [-0.5809, 1.2067, -15.5349, 29.7347, -13.8255]),
+            edg_mode_1=_mode_coeffs(blade.edge_mode_1_coeffs, [0.3627, 2.5337, -3.5772, 2.3760, -0.6952]),
+        )
+
+        # Build AeroDyn blade config from aero stations
+        if blade.aero_stations:
+            # AeroDyn AeroBladeStation fields: bl_spn, bl_crv_ac, bl_swp_ac, bl_crv_ang,
+            #                                  bl_twist, bl_chord, bl_af_id
+            # Blade aero station JSON keys: {frac, chord, aero_twist, airfoil_id, aero_center}
+            #
+            # airfoil_id in DB is a name string (e.g. "Cylinder1", "NACA64_A17").
+            # bl_af_id in the file generator is a 1-based integer index into the
+            # AFNames list. Build a unique ordered list and map names to indices.
+            unique_airfoils: list[str] = []
+            airfoil_index: dict[str, int] = {}
+            for s in blade.aero_stations:
+                af_name = s.get("airfoil_id", "Cylinder")
+                if af_name not in airfoil_index:
+                    unique_airfoils.append(af_name)
+                    airfoil_index[af_name] = len(unique_airfoils)  # 1-based
+
+            aero_stations = []
+            for s in blade.aero_stations:
+                frac = s.get("frac", s.get("fraction", 0))
+                af_name = s.get("airfoil_id", "Cylinder")
+                aero_stations.append(AeroBladeStation(
+                    bl_spn=frac * blade.blade_length,
+                    bl_crv_ac=0.0,
+                    bl_swp_ac=0.0,
+                    bl_crv_ang=0.0,
+                    bl_twist=s.get("aero_twist", s.get("aero_twist_deg", 0)),
+                    bl_chord=s.get("chord", s.get("chord_m", 0)),
+                    bl_af_id=airfoil_index[af_name],
+                ))
+            aerodyn_blade_config = AeroDynBladeConfig(
+                num_bl_nds=len(aero_stations),
+                stations=aero_stations,
+            )
+
+    # Build ServoDyn config
+    servodyn_config = None
+    discon_config = None
+    if controller:
+        # Resolve DLL path: prefer absolute ROSCO_LIB_PATH over bare filename
+        dll_filename = settings.ROSCO_LIB_PATH or controller.dll_filename or "libdiscon.dylib"
+        dll_procname = controller.dll_procname or "DISCON"
+        servodyn_config = ServoDynConfig(
+            pc_mode=controller.pcmode,
+            vs_contrl=controller.vscontrl,
+            dll_file_name=dll_filename,
+            dll_proc_name=dll_procname,
+        )
+        discon_config = DISCONConfig(
+            we_blade_radius=tm.tip_radius or 63.0,
+            we_gear_ratio=tm.gearbox_ratio or 97.0,
+            vs_rated_gen_pwr=(project.rated_power or 5000.0) * 1000.0,
+        )
+
+    # Build HydroDyn config for offshore
+    hydrodyn_config = None
+    subdyn_config = None
+    moordyn_config = None
+    platform_type = project.platform_type or "onshore"
+    water_depth = project.water_depth or 0.0
+
+    if platform_type != "onshore" and tm.hydrodyn_config:
+        from app.openfast.hydrodyn_generator import HydroDynConfig as HDConfig
+        hd = tm.hydrodyn_config
+        hydrodyn_config = HDConfig(
+            wave_mod=hd.get("wave_mod", 2),
+            wave_hs=hd.get("wave_hs", 1.5),
+            wave_tp=hd.get("wave_tp", 8.0),
+            wtr_dpth=hd.get("wtr_dpth", water_depth),
+        )
+
+    if platform_type in ("monopile", "jacket") and tm.substructure_config:
+        from app.openfast.subdyn_generator import SubDynConfig as SDConfig
+        sub = tm.substructure_config
+        subdyn_config = SDConfig(
+            joints=sub.get("joints", []),
+            members=sub.get("members", []),
+        )
+
+    if platform_type in ("spar", "semi_submersible", "tlp") and tm.moordyn_config:
+        from app.openfast.moordyn_generator import MoorDynConfig as MDConfig
+        moor = tm.moordyn_config
+        moordyn_config = MDConfig(
+            line_types=moor.get("line_types", []),
+            points=moor.get("points", []),
+            mooring_lines=moor.get("mooring_lines", moor.get("lines", [])),
+        )
+
+    return TurbineModelDC(
+        name=tm.name,
+        num_blades=project.num_blades or 3,
+        tip_radius=(project.rotor_diameter or 126.0) / 2.0,
+        hub_radius=1.5,
+        hub_height=project.hub_height or 90.0,
+        tower_height=tower.tower_height if tower else 87.6,
+        tower_base_height=tower.tower_base_height if tower else 10.0,
+        rated_power_kw=project.rated_power or 5000.0,
+        rated_wind_speed=project.rated_speed or 11.4,
+        rated_rotor_speed=tm.rotor_speed_rated or 12.1,
+        cut_in_wind_speed=project.cut_in_speed or 3.0,
+        cut_out_wind_speed=project.cut_out_speed or 25.0,
+        gearbox_ratio=tm.gearbox_ratio or 97.0,
+        rotor_overhang=tm.overhang or -5.0191,
+        shaft_tilt=tm.shaft_tilt or -5.0,
+        precone=tm.precone or -2.5,
+        tower_config=tower_config,
+        blade_config=blade_config,
+        aerodyn_blade_config=aerodyn_blade_config,
+        servodyn_config=servodyn_config,
+        discon_config=discon_config,
+        platform_type=platform_type,
+        water_depth=water_depth,
+        hydrodyn_config=hydrodyn_config,
+        subdyn_config=subdyn_config,
+        moordyn_config=moordyn_config,
+    )
+
+
+def _build_project_dc(project: ProjectORM) -> ProjectDC:
+    """Convert ORM Project to file generator Project dataclass."""
+    # Map wind class letter to number
+    turbine_class_map = {"I": 1, "II": 2, "III": 3}
+    wc = project.wind_class or "I"
+    tc = turbine_class_map.get(wc[0] if wc else "I", 1)
+    turb_class = project.turbulence_class or "B"
+
+    return ProjectDC(
+        name=project.name,
+        iec_class=f"{wc}{turb_class}",
+        turbine_class=tc,
+        turbulence_class=turb_class,
+    )
+
+
+def _mode_coeffs(db_coeffs: list[float] | None, defaults: list[float]) -> list[float]:
+    """Return mode shape coefficients, trimmed or padded to 5 entries.
+
+    The ORM stores 6 polynomial coefficients (ARRAY(Float)) but
+    ElastoDyn mode shape configs expect exactly 5 (x^2 through x^6).
+    If the DB array has 6 values we take the first 5; if fewer we pad
+    with zeros; if None we return the provided defaults.
+    """
+    if db_coeffs is None:
+        return defaults
+    coeffs = list(db_coeffs)
+    if len(coeffs) >= 5:
+        return coeffs[:5]
+    return coeffs + [0.0] * (5 - len(coeffs))
