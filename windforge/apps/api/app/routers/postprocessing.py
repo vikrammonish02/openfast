@@ -752,6 +752,7 @@ async def iec_gumbel_analysis(
             channel=body.channel,
             t_start=body.t_start,
             block_size=body.block_size,
+            threshold_sigma=body.threshold_sigma,
             return_periods=body.return_periods,
         ),
     )

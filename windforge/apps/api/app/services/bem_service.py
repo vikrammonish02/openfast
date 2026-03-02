@@ -30,8 +30,13 @@ from welib.dyninflow.DynamicInflow import (
     tau1_oye,
     tau2_oye,
 )
-from welib.wt_theory.idealrotors import ADMTO_CP, ADMTO_inductions
-from welib.wt_theory.wakeexpansion import wake_expansion
+try:
+    from welib.wt_theory.idealrotors import ADMTO_CP, ADMTO_inductions
+    from welib.wt_theory.wakeexpansion import wake_expansion
+except ImportError:
+    ADMTO_CP = None  # type: ignore[assignment]
+    ADMTO_inductions = None  # type: ignore[assignment]
+    wake_expansion = None  # type: ignore[assignment]
 
 logger = logging.getLogger("windforge.bem")
 

@@ -340,18 +340,32 @@ class IECGumbelRequest(BaseModel):
         le=3600.0,
         description="Block size for maxima extraction (s)",
     )
+    threshold_sigma: float = Field(
+        default=1.4,
+        gt=0,
+        le=5.0,
+        description="POT threshold = mean + sigma * this",
+    )
     return_periods: list[float] = Field(
         default=[1.0, 10.0, 50.0, 100.0, 500.0, 1000.0],
         description="Return periods for extrapolation",
     )
 
 
+class ExceedanceFitCurve(BaseModel):
+    """A single fitted distribution curve for the exceedance plot."""
+
+    x: list[float]
+    y: list[float]
+
+
 class IECGumbelResponse(BaseModel):
-    """Gumbel extrapolation results for a single channel from real data."""
+    """NREL-style extreme value extrapolation results with exceedance plot data."""
 
     channel: str
     n_cases: int
     n_blocks: int
+    n_peaks: int
     time: list[float]
     signal: list[float]
     block_maxima: list[float]
@@ -365,6 +379,12 @@ class IECGumbelResponse(BaseModel):
     confidence_95_lower: dict[str, float]
     confidence_95_upper: dict[str, float]
     case_block_info: list[dict]
+    # NREL-style exceedance probability plot data
+    exceedance_data_x: list[float]
+    exceedance_data_y: list[float]
+    exceedance_fits: dict[str, ExceedanceFitCurve]
+    pot_threshold: float
+    distribution_params: dict
 
 
 class IECChannelListResponse(BaseModel):

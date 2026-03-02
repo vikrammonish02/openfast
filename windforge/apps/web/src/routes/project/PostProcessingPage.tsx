@@ -131,8 +131,9 @@ interface IECLoadsResult {
   statistics_table: IECStatRow[];
   case_summary: IECCaseSummary[];
 }
+interface ExceedanceFitCurve { x: number[]; y: number[] }
 interface IECGumbelResult {
-  channel: string; n_cases: number; n_blocks: number;
+  channel: string; n_cases: number; n_blocks: number; n_peaks: number;
   time: number[]; signal: number[];
   block_maxima: number[];
   gumbel_params: { alpha: number; beta: number; mu: number; sigma: number; n_extremes: number };
@@ -143,6 +144,10 @@ interface IECGumbelResult {
   confidence_95_lower: Record<string, number>;
   confidence_95_upper: Record<string, number>;
   case_block_info: { case_id: string; dlc: string; vhub: number; block: number }[];
+  exceedance_data_x: number[]; exceedance_data_y: number[];
+  exceedance_fits: Record<string, ExceedanceFitCurve>;
+  pot_threshold: number;
+  distribution_params: Record<string, Record<string, number>>;
 }
 
 /* ---- helpers ---- */
@@ -274,6 +279,7 @@ export default function PostProcessingPage() {
   const [gumbelSelectedChannel, setGumbelSelectedChannel] = useState('');
   const [gumbelTStart, setGumbelTStart] = useState(30.0);
   const [gumbelBlockSize, setGumbelBlockSize] = useState(600.0);
+  const [gumbelThreshSigma, setGumbelThreshSigma] = useState(1.4);
   const [gumbelResult, setGumbelResult] = useState<IECGumbelResult | null>(null);
   const [gumbelLoading, setGumbelLoading] = useState(false);
 
@@ -371,12 +377,13 @@ export default function PostProcessingPage() {
         dlc_filter: dlcFilter,
         t_start: gumbelTStart,
         block_size: gumbelBlockSize,
+        threshold_sigma: gumbelThreshSigma,
       });
       setGumbelResult(result);
       toast.success(`Gumbel fit: ${result.n_blocks} block maxima from ${result.n_cases} cases`);
     } catch { setError('IEC Gumbel analysis failed'); toast.error('Failed'); }
     finally { setGumbelLoading(false); }
-  }, [projectId, gumbelSimId, gumbelSelectedChannel, gumbelSelectedDlcs, gumbelTStart, gumbelBlockSize]);
+  }, [projectId, gumbelSimId, gumbelSelectedChannel, gumbelSelectedDlcs, gumbelTStart, gumbelBlockSize, gumbelThreshSigma]);
 
   const toggleGumbelDlc = useCallback((dlc: string) => {
     setGumbelSelectedDlcs((prev) => {
@@ -771,6 +778,7 @@ export default function PostProcessingPage() {
 
               <NumberInput label="Transient Skip" value={gumbelTStart} onChange={setGumbelTStart} step={5} min={0} max={120} unit="s" />
               <NumberInput label="Block Size" value={gumbelBlockSize} onChange={setGumbelBlockSize} step={60} min={10} max={3600} unit="s" />
+              <NumberInput label="POT Threshold" value={gumbelThreshSigma} onChange={setGumbelThreshSigma} step={0.1} min={0.5} max={5.0} unit={"\u03C3"} />
 
               <button onClick={handleIecGumbel} disabled={gumbelLoading || !gumbelSimId || !gumbelSelectedChannel}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 rounded-lg text-sm font-medium text-white transition-colors mt-3">
@@ -1076,29 +1084,83 @@ export default function PostProcessingPage() {
             {/* ===== IEC GUMBEL EXTRAPOLATION ===== */}
             {isIecGumbelTab && gumbelResult && gumbelResult.n_blocks > 0 && (
               <>
-                {/* Time series */}
-                {gumbelResult.time.length > 0 && (
-                  <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
-                    <Plot data={iecGumbelSignalTrace as Plotly.Data[]} layout={makePlotLayout({
-                      title: `${gumbelResult.channel} — Last Case Time Series`,
-                      xaxis: { title: 'Time [s]' }, yaxis: { title: gumbelResult.channel },
-                    })} config={{ responsive: true }} style={{ width: '100%', height: 260 }} />
-                  </div>
-                )}
+                {/* ---- MAIN CHART: NREL-style Exceedance Probability Plot ---- */}
+                <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
+                  <Plot
+                    data={iecExceedancePlotTrace as Plotly.Data[]}
+                    layout={makePlotLayout({
+                      title: `Exceedance Probability — ${gumbelResult.channel}  (${gumbelResult.n_peaks} POT peaks, threshold = ${gumbelResult.pot_threshold.toFixed(1)})`,
+                      xaxis: { title: `Load Threshold — ${gumbelResult.channel}` },
+                      yaxis: {
+                        title: 'Probability of Exceedance',
+                        type: 'log',
+                        range: [-5, 0],
+                        dtick: 1,
+                      },
+                      legend: { bgcolor: 'rgba(0,0,0,0.5)', font: { size: 11, color: '#e2e8f0' }, x: 0.72, y: 0.98 },
+                    })}
+                    config={{ responsive: true }}
+                    style={{ width: '100%', height: 420 }}
+                  />
+                </div>
 
                 {/* Gumbel probability plot + return period */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
                     <Plot data={iecGumbelProbPlotTrace as Plotly.Data[]} layout={makePlotLayout({
-                      title: 'Gumbel Probability Plot',
+                      title: 'Gumbel Probability Plot (Block Maxima)',
                       xaxis: { title: `${gumbelResult.channel}` }, yaxis: { title: '-ln(-ln(F))  [reduced variate]' },
-                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 340 }} />
                   </div>
                   <div className="bg-slate-800/30 rounded-xl p-2 border border-amber-700/20">
                     <Plot data={iecGumbelReturnTrace as Plotly.Data[]} layout={makePlotLayout({
                       title: 'Return Period Extrapolation (95% CI)',
                       xaxis: { title: 'Return Period', type: 'log' }, yaxis: { title: `${gumbelResult.channel}` },
-                    })} config={{ responsive: true }} style={{ width: '100%', height: 350 }} />
+                    })} config={{ responsive: true }} style={{ width: '100%', height: 340 }} />
+                  </div>
+                </div>
+
+                {/* Distribution Parameters Table */}
+                <div className="bg-slate-800/30 rounded-xl border border-amber-700/20 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-700/30">
+                    <h3 className="text-sm font-semibold text-slate-200">Fitted Distribution Parameters</h3>
+                    <p className="text-[10px] text-slate-500">Method of moments fits to {gumbelResult.n_peaks} peaks-over-threshold / {gumbelResult.n_blocks} block maxima</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-800/60">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-slate-400 font-semibold">Distribution</th>
+                          <th className="px-3 py-2 text-left text-slate-400 font-semibold">Parameters</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/30">
+                        {gumbelResult.distribution_params.gumbel && (
+                          <tr className="hover:bg-slate-800/40">
+                            <td className="px-3 py-2 font-medium" style={{ color: '#f472b6' }}>Gumbel (EV1)</td>
+                            <td className="px-3 py-2 font-mono text-slate-300">
+                              &alpha; = {gumbelResult.distribution_params.gumbel.alpha?.toFixed(6)}, &beta; = {gumbelResult.distribution_params.gumbel.beta?.toFixed(2)}
+                            </td>
+                          </tr>
+                        )}
+                        {gumbelResult.distribution_params.weibull_2p && (
+                          <tr className="hover:bg-slate-800/40">
+                            <td className="px-3 py-2 font-medium" style={{ color: '#34d399' }}>Weibull (2P)</td>
+                            <td className="px-3 py-2 font-mono text-slate-300">
+                              k = {gumbelResult.distribution_params.weibull_2p.k?.toFixed(4)}, &lambda; = {gumbelResult.distribution_params.weibull_2p.lambda?.toFixed(2)}
+                            </td>
+                          </tr>
+                        )}
+                        {gumbelResult.distribution_params.weibull_3p && (
+                          <tr className="hover:bg-slate-800/40">
+                            <td className="px-3 py-2 font-medium" style={{ color: '#fbbf24' }}>Weibull (3P)</td>
+                            <td className="px-3 py-2 font-mono text-slate-300">
+                              k = {gumbelResult.distribution_params.weibull_3p.k?.toFixed(4)}, &lambda; = {gumbelResult.distribution_params.weibull_3p.lambda?.toFixed(2)}, &gamma; = {gumbelResult.distribution_params.weibull_3p.gamma?.toFixed(2)}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
